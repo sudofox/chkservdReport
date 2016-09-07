@@ -32,7 +32,11 @@
 			$entry = current(current($entries));
 			// Pull out the service check results
 			preg_match_all("/Service\ check\ \.(.*)Done/smi", $entry, $this->serviceCheckResults);
-			preg_match_all("/[^\.\.\.][a-zA-Z0-9]{1,}\ \[(\[|).+?(?=\]\])\]\]/smi", current(array_pop($this->serviceCheckResults)), $this->serviceCheckResults);
+			preg_match_all("/[^\.\.\.][_\-a-zA-Z0-9]{1,}\ \[(too\ soon\ after\ restart\ to\ check|(\[|).+?(?=\]\])\])\]/smi", current(array_pop($this->serviceCheckResults)), $this->serviceCheckResults);
+
+//			Following line can be deleted after testing:
+//			preg_match_all("/[^\.\.\.][a-zA-Z0-9]{1,}\ \[(\[|).+?(?=\]\])\]\]/smi", current(array_pop($this->serviceCheckResults)), $this->serviceCheckResults);
+
 			$this->serviceCheckResults = current($this->serviceCheckResults);
 			var_export($this->serviceCheckResults);
 			// Generate array of service names in same order as $serviceCheckResults
@@ -67,11 +71,11 @@
 		function explodeServiceCheckLine($checkOutput) {
 
 //			$serviceCheckRegex = "/\[(TCP\ Transaction\ Log.+?(?=Died)Died\]|check\ command:(\+|-|\?|N\/A)\]|socket\ connect:(\+|-|\?|N\/A)\]|socket\ failure\ threshold:[0-9]{1,}\/[0-9]{1,}\]|could\ not\ determine\ status\]|no\ notification\ for\ unknown\ status\ due\ to\ upgrade\ in\ progress\]|too\ soon\ after\ restart\ to\ check\]|fail\ count:[0-9]{1,}\]|notify:(unknown|recovered|failed)\ service:.+?(?=\])\]|socket_service_auth:1\]|http_service_auth:1\])/ms";
-			$serviceCheckRegex = "/(Restarting\ ([a-zA-Z0-9]{1,})\.\.\.\.|\[TCP\ Transaction\ Log.+?(?=Died)Died\]|\[check\ command:(\+|-|\?|N\/A)\]|\[socket\ connect:(\+|-|\?|N\/A)\]|\[socket\ failure\ threshold:[0-9]{1,}\/[0-9]{1,}\]|\[could\ not\ determine\ status\]|\[no\ notification\ for\ unknown\ status\ due\ to\ upgrade\ in\ progress\]|\[too\ soon\ after\ restart\ to\ check\]|\[fail\ count:[0-9]{1,}\]|\[notify:(unknown|recovered|failed)\ service:.+?(?=\])\]|\[socket_service_auth:1\]|\[http_service_auth:1\])/ms";
+			$serviceCheckRegex = "/(Restarting\ ([_\-a-zA-Z0-9]{1,})\.\.\.\.|\[TCP\ Transaction\ Log.+?(?=Died)Died\]|\[check\ command:(\+|-|\?|N\/A)\]|\[socket\ connect:(\+|-|\?|N\/A)\]|\[socket\ failure\ threshold:[0-9]{1,}\/[0-9]{1,}\]|\[could\ not\ determine\ status\]|\[no\ notification\ for\ unknown\ status\ due\ to\ upgrade\ in\ progress\]|\[too\ soon\ after\ restart\ to\ check\]|\[fail\ count:[0-9]{1,}\]|\[notify:(unknown|recovered|failed)\ service:.+?(?=\])\]|\[socket_service_auth:1\]|\[http_service_auth:1\])/ms";
 			preg_match_all($serviceCheckRegex, $checkOutput, $serviceCheckData);
 			$serviceCheckData = current($serviceCheckData);
 			$serviceCheckData["service_name"] = explode(" ", $checkOutput);
-			$serviceCheckData["service_name"] =  $serviceCheckData["service_name"][0];
+			$serviceCheckData["service_name"] =  "[service_name:".$serviceCheckData["service_name"][0]."]"; // not part of the original chkservd log output but syntactically similar so we can parse it out with regex
 			return $serviceCheckData;
 		}
 
@@ -123,17 +127,61 @@
                                       //          $serviceBreakdown["socket_failure_threshold"] = "
 				break;
 
+				case (preg_match("/\[too\ soon\ after\ restart\ to\ check\]/", $attribute) ? $attribute: !$attribute):
+					$serviceBreakdown["check_postponed_due_to_recent_service_restart"] = true;
+
+				break;
+				case (preg_match("/\[socket_service_auth:1\]/", $attribute) ? $attribute: !$attribute):
+
+					$serviceBreakdown["socket_service_auth"] = true; // not entirely sure if this is logged when auth succeeds... eh.
+
+				break;
+				case (preg_match("/\[http_service_auth:1\]/", $attribute) ? $attribute: !$attribute):
+
+					$serviceBreakdown["http_service_auth"] = true; // ?
+
+				break;
+				case (preg_match("/\[notify:(failed|recovered)\ service:.+?(?=\])\]/", $attribute) ? $attribute : !$attribute):
+					preg_match("/\[notify:(failed|recovered)\ service:.+?(?=\])\]/", $attribute, $attributeData);
+					if ($attributeData[1] == "failed") {
+						$serviceBreakdown["notification"] = "failed";
+					} elseif ($attributeData[1] == "recovered") {
+						$serviceBreakdown["notification"] = "recovered";
+					}
+
+					break;
+				case (preg_match("/Restarting\ ([_\-A-Za-z0-9]{1,})\.\.\.\./", $attribute) ? $attribute: !$attribute):
+					$serviceBreakdown["restart_attempted"] = true;
+				break;
+
+				case (preg_match("/\[fail\ count:([0-9]{1,})\]/", $attribute) ? $attribute: !$attribute):
+					preg_match("/\[fail\ count:([0-9]{1,})\]/", $attribute, $attributeData);
+					$serviceBreakdown["fail_count"] = $attributeData[1];
+
+				break;
+				case (preg_match("/\[service_name:([_\-A-Za-z0-9]{1,})\]/", $attribute) ? $attribute: !$attribute):
+					preg_match("/\[service_name:([_\-A-Za-z0-9]{1,})\]/", $attribute, $attributeData);
+					$serviceBreakdown["service_name"] = $attributeData[1];
+
+				break;
+				default:
+
+echo					exec("tput setaf 1");
+					echo "Unhandled attribute:  \"$attribute\"\n";
+echo					exec("tput sgr0");
+				break;
+
 
 			} // end switch case
 	}	// end foreach
 
+echo "\n";
 var_export($serviceBreakdown);
 
 }	// end function
 
 } // end class
 
-	$parser = new chkservdParser;
 
 	$usage = <<<EOD
 Usage: ./parse_chkservd.php <filename> [<number of lines to parse, counting back from last entry>]
@@ -144,6 +192,8 @@ EOD;
 	if (!isset($argv[1]) || !file_exists($argv[1])) {
 		exit($usage);
 	}
+
+	$parser = new chkservdParser;
 
 	// note:
 	// We might want to check the size of the chkservd log to ensure we don't run out of memory

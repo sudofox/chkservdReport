@@ -1,12 +1,6 @@
 #!/usr/bin/env php
 <?php
 
-// NOTE TO SELF:
-/*
-*		the regex matching pairs for certain numbers might not match > 1 chara so check that you have a bounds of {1,} for them
-*
-*
-*/
 	// by aburk
 	// parse chkservd log and return a pretty summary of service failures and whatnot
 	// chkservd entry parser
@@ -34,8 +28,6 @@
 			preg_match_all("/Service\ check\ \.(.*)Done/smi", $entry, $this->serviceCheckResults);
 			preg_match_all("/[^\.\.\.][_\-a-zA-Z0-9]{1,}\ \[(too\ soon\ after\ restart\ to\ check|(\[|).+?(?=\]\])\])\]/smi", current(array_pop($this->serviceCheckResults)), $this->serviceCheckResults);
 
-//			Following line can be deleted after testing:
-//			preg_match_all("/[^\.\.\.][a-zA-Z0-9]{1,}\ \[(\[|).+?(?=\]\])\]\]/smi", current(array_pop($this->serviceCheckResults)), $this->serviceCheckResults);
 
 			$this->serviceCheckResults = current($this->serviceCheckResults);
 			var_export($this->serviceCheckResults);
@@ -70,7 +62,6 @@
 		// -- Purpose : Pull information from a service check line
 		function explodeServiceCheckLine($checkOutput) {
 
-//			$serviceCheckRegex = "/\[(TCP\ Transaction\ Log.+?(?=Died)Died\]|check\ command:(\+|-|\?|N\/A)\]|socket\ connect:(\+|-|\?|N\/A)\]|socket\ failure\ threshold:[0-9]{1,}\/[0-9]{1,}\]|could\ not\ determine\ status\]|no\ notification\ for\ unknown\ status\ due\ to\ upgrade\ in\ progress\]|too\ soon\ after\ restart\ to\ check\]|fail\ count:[0-9]{1,}\]|notify:(unknown|recovered|failed)\ service:.+?(?=\])\]|socket_service_auth:1\]|http_service_auth:1\])/ms";
 			$serviceCheckRegex = "/(Restarting\ ([_\-a-zA-Z0-9]{1,})\.\.\.\.|\[TCP\ Transaction\ Log.+?(?=Died)Died\]|\[check\ command:(\+|-|\?|N\/A)\]|\[socket\ connect:(\+|-|\?|N\/A)\]|\[socket\ failure\ threshold:[0-9]{1,}\/[0-9]{1,}\]|\[could\ not\ determine\ status\]|\[no\ notification\ for\ unknown\ status\ due\ to\ upgrade\ in\ progress\]|\[too\ soon\ after\ restart\ to\ check\]|\[fail\ count:[0-9]{1,}\]|\[notify:(unknown|recovered|failed)\ service:.+?(?=\])\]|\[socket_service_auth:1\]|\[http_service_auth:1\])/ms";
 			preg_match_all($serviceCheckRegex, $checkOutput, $serviceCheckData);
 			$serviceCheckData = current($serviceCheckData);

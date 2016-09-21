@@ -16,7 +16,7 @@
 
 		// -- Function Name : loadEntry
 		// -- Params : $input
-		// -- Purpose :
+		// -- Purpose : parses all data out of a single chkservd log entry.
 		function loadEntry($input) {
 			// Should be given only one chkservd log section, will chop of rest if more is given.
 			// $chkservd_entry should Start with "Service Check Started" and end with "Service Check Finished"
@@ -30,7 +30,6 @@
 
 
 			$this->serviceCheckResults = current($this->serviceCheckResults);
-			var_export($this->serviceCheckResults);
 			// Generate array of service names in same order as $serviceCheckResults
 			$servicesList = array();
 			foreach($this->serviceCheckResults as $entry) {
@@ -51,10 +50,15 @@
 		}
 
 
-		var_export($serviceChecks_associative);
+
 		foreach ($serviceChecks_associative as $service) {
-			$this->analyzeServiceCheck($service);
+			$serviceInfo =	$this->analyzeServiceCheck($service);
+			$this->entryData[$serviceInfo["service_name"]] = $serviceInfo;
+
 	}
+echo exec("tput setaf 1");
+	var_export($this->entryData);
+echo exec("tput sgr0");
 }
 
 		// -- Function Name : explodeServiceCheckLine
@@ -62,11 +66,14 @@
 		// -- Purpose : Pull information from a service check line
 		function explodeServiceCheckLine($checkOutput) {
 
-			$serviceCheckRegex = "/(Restarting\ ([_\-a-zA-Z0-9]{1,})\.\.\.\.|\[TCP\ Transaction\ Log.+?(?=Died)Died\]|\[check\ command:(\+|-|\?|N\/A)\]|\[socket\ connect:(\+|-|\?|N\/A)\]|\[socket\ failure\ threshold:[0-9]{1,}\/[0-9]{1,}\]|\[could\ not\ determine\ status\]|\[no\ notification\ for\ unknown\ status\ due\ to\ upgrade\ in\ progress\]|\[too\ soon\ after\ restart\ to\ check\]|\[fail\ count:[0-9]{1,}\]|\[notify:(unknown|recovered|failed)\ service:.+?(?=\])\]|\[socket_service_auth:1\]|\[http_service_auth:1\])/ms";
+			$serviceCheckRegex = "/(Restarting\ ([_\-a-zA-Z0-9]{1,})\.\.\.\.|TCP\ Transaction\ Log.+?(?=Died)Died(?!=\[)|\[check\ command:(\+|-|\?|N\/A)\]|\[socket\ connect:(\+|-|\?|N\/A)\]|\[socket\ failure\ threshold:[0-9]{1,}\/[0-9]{1,}\]|\[could\ not\ determine\ status\]|\[no\ notification\ for\ unknown\ status\ due\ to\ upgrade\ in\ progress\]|\[too\ soon\ after\ restart\ to\ check\]|\[fail\ count:[0-9]{1,}\]|\[notify:(unknown|recovered|failed)\ service:.+?(?=\])\]|\[socket_service_auth:1\]|\[http_service_auth:1\])/ms";
 			preg_match_all($serviceCheckRegex, $checkOutput, $serviceCheckData);
 			$serviceCheckData = current($serviceCheckData);
 			$serviceCheckData["service_name"] = explode(" ", $checkOutput);
 			$serviceCheckData["service_name"] =  "[service_name:".$serviceCheckData["service_name"][0]."]"; // not part of the original chkservd log output but syntactically similar so we can parse it out with regex
+// echo exec("tput setaf 2");
+// var_export($serviceCheckData);
+// echo exec("tput sgr0");
 			return $serviceCheckData;
 		}
 
@@ -75,6 +82,7 @@
 		// -- Params : $checkOutput
 		// -- Purpose : Pull information from a service check line
 		function analyzeServiceCheck($serviceCheck) {
+
 
 		$serviceBreakdown = array();
 			foreach($serviceCheck as $attribute) {
@@ -114,8 +122,19 @@
 				break;
                                 case (preg_match("/\[socket\ failure\ threshold:([0-9]{1,})\/([0-9]{1,})\]/ms", $attribute) ? $attribute : !$attribute) :
 					preg_match("/\[socket\ failure\ threshold:([0-9]{1,})\/([0-9]{1,})\]/ms", $attribute, $attributeData);
-
-                                      //          $serviceBreakdown["socket_failure_threshold"] = "
+/*
+array (
+  0 => '[socket failure threshold:1/3]',
+  1 => '1',
+  2 => '3',
+)
+*/
+					// We can test if the socket failure threshold is equal to or more than 1... (I've seen "4/3" before)
+					if ($attributeData[2] == 0) { // just in case this happens, to avoid divide by zero
+						$serviceBreakdown["socket_failure_threshold"] = 1; // mark as down 
+					} else {
+	                                        $serviceBreakdown["socket_failure_threshold"] = $attributeData[1] / $attributeData[2]; // will return 
+					}
 				break;
 
 				case (preg_match("/\[too\ soon\ after\ restart\ to\ check\]/", $attribute) ? $attribute: !$attribute):
@@ -153,7 +172,11 @@
 				case (preg_match("/\[service_name:([_\-A-Za-z0-9]{1,})\]/", $attribute) ? $attribute: !$attribute):
 					preg_match("/\[service_name:([_\-A-Za-z0-9]{1,})\]/", $attribute, $attributeData);
 					$serviceBreakdown["service_name"] = $attributeData[1];
-
+				break;
+				case ((preg_match_all("/TCP\ Transaction\ Log.+?(?=Died)Died(?!=\[)/ms", $attribute) > 0) ? $attribute: !$attribute):
+					preg_match_all("/TCP\ Transaction\ Log.+?(?=Died)Died(?!=\[)/ms", $attribute, $attributeData);
+					$attributeData = current($attributeData);
+					$serviceBreakdown["tcp_transaction_log"] = $attributeData[0];
 				break;
 				default:
 
@@ -166,9 +189,8 @@ echo					exec("tput sgr0");
 			} // end switch case
 	}	// end foreach
 
-echo "\n";
-var_export($serviceBreakdown);
 
+return $serviceBreakdown;
 }	// end function
 
 } // end class
@@ -206,7 +228,15 @@ EOD;
 		$logdata = file_get_contents($argv[1]);
 	}
 
-	//	echo($logdata);
-	$parser->loadEntry($logdata);
+//	$parser->loadEntry($logdata);
+
+// Parse out all chkservd log entries into individual array elements.
 
 
+preg_match_all("/Service\ Check\ Started.*?Service\ Check\ Finished/ism", $logdata, $logEntries);	// parse input data into unique elements with one raw chkservd entry per element
+$logEntries = current($logEntries);									// get index 0 of preg_match_all's output array (contains the data)
+foreach ($logEntries as $entry) {
+
+	$parser->loadEntry($entry);
+
+}

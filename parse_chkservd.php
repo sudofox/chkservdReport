@@ -6,10 +6,9 @@
 	// chkservd entry parser
 	class chkservdParser {
 		var $checkTime;
-		var $downServices;
-		// unresolved down services, used for comparison between previous and next check
-		var $entryData;
-		// current log entry being processed.
+		var $downServices;	// unresolved down services, used for comparison between previous and next check
+		var $entryData;		// current log entry being processed.
+		var $timeline;		// a timeline of when things happen: services gone down, back up, restart attempts, currently down, etc. 
 		public $servicesList = array();
 		// list of services, the names being in the same order as $serviceCheckResults
 		public $serviceCheckResults = array();
@@ -17,13 +16,21 @@
 		// -- Function Name : loadEntry
 		// -- Params : $input
 		// -- Purpose : parses all data out of a single chkservd log entry.
+		// -- Currently returns false if it is presented with an invalid service check.
 		function loadEntry($input) {
-			// Should be given only one chkservd log section, will chop of rest if more is given.
-			// $chkservd_entry should Start with "Service Check Started" and end with "Service Check Finished"
-			// Pull out our Chkservd log block entry...pull first one if more is provided for some reason
+			// Should be given only one chkservd log section, will chop off rest if more is given.
+			// Pull out our Chkservd log block entry...pull first one if more than one are provided for some reason
 
-			preg_match_all("/Service\ Check\ Started.*?Service\ Check\ Finished/ism", $input, $entries);
+			preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $input, $entries);
 			$entry = current(current($entries));
+
+			// check to make absolutely sure that this is a service check that has completed in its entirety
+			if (strpos($entry, "Service Check Interrupted") !== false): return false; endif; // return false, this check is invalid as it was interrupted
+
+			// get timestamp of service check
+			preg_match_all("/(?<=\[)[0-9]{4}\-.+?(?=\] Service\ check)/", $entry, $entry_timestamp);
+			$entry_timestamp = strtotime(current(current($entry_timestamp)));
+
 			// Pull out the service check results
 			preg_match_all("/Service\ check\ \.(.*)Done/smi", $entry, $this->serviceCheckResults);
 			preg_match_all("/[^\.\.\.][_\-a-zA-Z0-9]{1,}\ \[(too\ soon\ after\ restart\ to\ check|(\[|).+?(?=\]\])\])\]/smi", current(array_pop($this->serviceCheckResults)), $this->serviceCheckResults);
@@ -53,12 +60,16 @@
 
 		foreach ($serviceChecks_associative as $service) {
 			$serviceInfo =	$this->analyzeServiceCheck($service);
-			$this->entryData[$serviceInfo["service_name"]] = $serviceInfo;
+			$this->entryData["services"][$serviceInfo["service_name"]] = $serviceInfo;
 
-	}
-echo exec("tput setaf 1");
+		}
+		
+		$this->entryData["timestamp"] = $entry_timestamp; // unix timestamp from service check
+	echo exec("tput setaf 1");
 	var_export($this->entryData);
-echo exec("tput sgr0");
+	echo exec("tput sgr0");
+
+
 }
 
 		// -- Function Name : explodeServiceCheckLine
@@ -233,10 +244,18 @@ EOD;
 // Parse out all chkservd log entries into individual array elements.
 
 
-preg_match_all("/Service\ Check\ Started.*?Service\ Check\ Finished/ism", $logdata, $logEntries);	// parse input data into unique elements with one raw chkservd entry per element
-$logEntries = current($logEntries);									// get index 0 of preg_match_all's output array (contains the data)
-foreach ($logEntries as $entry) {
+preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $logdata, $splitLogEntries);	// parse input data into unique elements with one raw chkservd entry per element
+
+// We need to throw away interrupted service checks (which abruptly end with "Service Check Interrupted\n")
+foreach (current($splitLogEntries) as $index => $entry) {
+	if ($splitLogEntries[1][$index] == "Interrupted") { unset($splitLogEntries[0][$index]); unset($splitLogEntries[1][$index]); continue; } // throw away service checks that have the capturing group returned as "Interrupted"
+}
+
+// Now we can go over each service check one-by-one.
+foreach (current($splitLogEntries) as $index => $entry) {
 
 	$parser->loadEntry($entry);
 
 }
+
+

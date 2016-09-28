@@ -16,7 +16,7 @@
 		// -- Function Name : loadEntry
 		// -- Params : $input
 		// -- Purpose : parses all data out of a single chkservd log entry.
-		// -- Currently returns false if it is presented with an invalid service check.
+		// -- Currently returns false if it is presented with an invalid service check. otherwise, returns entryData array.
 		function loadEntry($input) {
 			// Should be given only one chkservd log section, will chop off rest if more is given.
 			// Pull out our Chkservd log block entry...pull first one if more than one are provided for some reason
@@ -65,12 +65,12 @@
 		}
 		
 		$this->entryData["timestamp"] = $entry_timestamp; // unix timestamp from service check
-	echo exec("tput setaf 1");
-	var_export($this->entryData);
-	echo exec("tput sgr0");
 
+	return $this->entryData;
 
 }
+
+
 
 		// -- Function Name : explodeServiceCheckLine
 		// -- Params : $checkOutput
@@ -82,9 +82,6 @@
 			$serviceCheckData = current($serviceCheckData);
 			$serviceCheckData["service_name"] = explode(" ", $checkOutput);
 			$serviceCheckData["service_name"] =  "[service_name:".$serviceCheckData["service_name"][0]."]"; // not part of the original chkservd log output but syntactically similar so we can parse it out with regex
-// echo exec("tput setaf 2");
-// var_export($serviceCheckData);
-// echo exec("tput sgr0");
 			return $serviceCheckData;
 		}
 
@@ -254,8 +251,8 @@ foreach (current($splitLogEntries) as $index => $entry) {
 // Now we can go over each service check one-by-one.
 foreach (current($splitLogEntries) as $index => $entry) {
 
-	$parser->loadEntry($entry);
-
+//	$parser->loadEntry($entry);
+var_dump($parser->loadEntry($entry));
 }
 
 

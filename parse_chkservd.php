@@ -8,7 +8,7 @@
 		var $checkTime;
 		var $downServices;	// unresolved down services, used for comparison between previous and next check
 		var $entryData;		// current log entry being processed.
-		var $timeline;		// a timeline of when things happen: services gone down, back up, restart attempts, currently down, etc. 
+		public $timeline = array();		// a timeline of when things happen: services gone down, back up, restart attempts, currently down, etc.
 		public $servicesList = array();
 		// list of services, the names being in the same order as $serviceCheckResults
 		public $serviceCheckResults = array();
@@ -63,13 +63,82 @@
 			$this->entryData["services"][$serviceInfo["service_name"]] = $serviceInfo;
 
 		}
-		
 		$this->entryData["timestamp"] = $entry_timestamp; // unix timestamp from service check
 
 	return $this->entryData;
 
 }
 
+		// -- Function Name : extractRelevantEvents
+		// -- Params : $checkData (one of the elements within the entryData array)
+		// -- Purpose : Extracts relevant events from a service check, most notably downed/restored services
+
+		function extractRelevantEvents($checkData) {
+
+		$output = array();
+
+		foreach($checkData as $service) {
+
+		if (	(isset($service["check_command"]) && $service["check_command"] == "down") ||
+			(isset($service["socket_connect"]) && $service["socket_connect"] == "down") ||
+			 isset($service["notification"]) || isset($service["socket_failure_threshold"]) ) {
+				$output[$service["service_name"]] = $service;
+				//var_export($service);
+
+				}
+			}
+
+	return $output;
+
+		}
+
+		// -- Function Name : explainServiceCheckResult
+		// -- Params :	$check
+		// -- Purpose : Produces an array with human-readable information and color information about a particular service check. Does not do comparison.
+		function explainServiceCheckResult($check) {
+
+		// $fmt array is "format"
+		$fmt["yellow"]	= exec("tput setaf 3");
+		$fmt["green"]	= exec("tput setaf 2");
+		$fmt["red"]	= exec("tput setaf 1");
+		$fmt["bold"]	= exec("tput bold");
+		$fmt["reset"]	= exec("tput sgr0");
+
+		// Several categories of information:
+		// META: 	(blue, bold)	used for an unhandled attribute
+		// INFO: 	(white, bold)	TCP Transaction logs and stuff, or the service's name
+		// FAIL: 	(red)		Regarding something that contributes to the decision that a service should be marked as down by chkservd
+		// DOWN: 	(red, bold)	Service has been marked as down
+		// RECOVERED:	(green, bold)	Service has been marked as recovered
+		// ACTION:	(yellow, bold)	Action has been taken (email notification sent, service restart attempted, etc)
+		foreach($check as $attribute => $value) {
+
+			switch($attribute) {
+
+			case "service_name":
+				echo($fmt["bold"] . "INFO: Service name: $value" . $fmt["reset"] . "\n");
+				break;
+			case "fail_count":
+				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed ".$fmt["bold"]. $value . $fmt["reset"]. " consecutive service check(s).". "\n");
+				break;
+			case "check_command":
+				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the check_command test." . $fmt["reset"]. "\n");
+				break;
+			case "socket_connect":
+				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the socket_command test." . $fmt["reset"]. "\n");
+				break;
+			case "notification":
+				// TODO: color-code the $value
+				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A notification has been sent regarding the service status (" . $fmt["bold"] . $value . $fmt["reset"] .")." . "\n");
+				break;
+			default:
+				echo($fmt["red"] . "META: The attribute $attribute has no explanation." . $fmt["reset"] ."\n");
+				break;
+
+				}
+			}
+
+	}
 
 
 		// -- Function Name : explodeServiceCheckLine
@@ -197,6 +266,7 @@ echo					exec("tput sgr0");
 			} // end switch case
 	}	// end foreach
 
+$serviceBreakdown = array("service_name" => $serviceBreakdown["service_name"]) + $serviceBreakdown; // shift the service_name attribute to the beginning of the array
 
 return $serviceBreakdown;
 }	// end function
@@ -213,19 +283,20 @@ EOD;
 	if (!isset($argv[1]) || !file_exists($argv[1])) {
 		exit($usage);
 	}
+	date_default_timezone_set("America/New_York"); // for later calls to strftime
 
 	$parser = new chkservdParser;
 
 	// note:
 	// We might want to check the size of the chkservd log to ensure we don't run out of memory
 	// not implemented yet tho
-	
+
 	if (exec("head -n1 ".escapeshellarg($argv[1])) != "Service Check Started") {
 		exit("ERROR: This does not appear to be a chkservd log file.\n");
 	}
 
 	$logdata = "";
-	
+
 	if (isset($argv[2]) && is_numeric($argv[2]) && $argv[2] > 0) {
 		exec("tail -n".escapeshellarg($argv[2])." ".escapeshellarg($argv[1]),$logtail);
 		foreach($logtail as $line) {
@@ -251,8 +322,25 @@ foreach (current($splitLogEntries) as $index => $entry) {
 // Now we can go over each service check one-by-one.
 foreach (current($splitLogEntries) as $index => $entry) {
 
-//	$parser->loadEntry($entry);
-var_dump($parser->loadEntry($entry));
+$check = $parser->loadEntry($entry);
+
+$parser->timeline[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"]);
+
+// Just a note, we convert the timestamps into UNIX timestamps, which frees us to convert them back into a formatted time string with our desired Timezone, by default, America/New_York
+$parser->timeline[$check["timestamp"]]["timestamp"] = $check["timestamp"];
+
+$parser->timeline[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T %z", $check["timestamp"]);
+
 }
 
 
+foreach($parser->timeline as $point) {
+
+// var_export($parser->timeline);
+
+	foreach($point["services"] as $service) {
+		echo "\n";
+		$parser->explainServiceCheckResult($service);
+	}
+
+}

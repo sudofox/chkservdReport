@@ -83,7 +83,6 @@
 			(isset($service["socket_connect"]) && $service["socket_connect"] == "down") ||
 			 isset($service["notification"]) || isset($service["socket_failure_threshold"]) ) {
 				$output[$service["service_name"]] = $service;
-				//var_export($service);
 
 				}
 			}
@@ -102,12 +101,14 @@
 		$fmt["green"]	= exec("tput setaf 2");
 		$fmt["red"]	= exec("tput setaf 1");
 		$fmt["bold"]	= exec("tput bold");
+		$fmt["dim"]	= exec("tput dim");
 		$fmt["reset"]	= exec("tput sgr0");
 
 		// Several categories of information:
 		// META: 	(blue, bold)	used for an unhandled attribute
 		// INFO: 	(white, bold)	TCP Transaction logs and stuff, or the service's name
 		// FAIL: 	(red)		Regarding something that contributes to the decision that a service should be marked as down by chkservd
+		// PASS:	(green)		Regarding something that contributes to the decision that a service should be marked as up by chkservd
 		// DOWN: 	(red, bold)	Service has been marked as down
 		// RECOVERED:	(green, bold)	Service has been marked as recovered
 		// ACTION:	(yellow, bold)	Action has been taken (email notification sent, service restart attempted, etc)
@@ -121,16 +122,65 @@
 			case "fail_count":
 				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed ".$fmt["bold"]. $value . $fmt["reset"]. " consecutive service check(s).". "\n");
 				break;
-			case "check_command":
-				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the check_command test." . $fmt["reset"]. "\n");
-				break;
-			case "socket_connect":
-				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the socket_command test." . $fmt["reset"]. "\n");
-				break;
+                        case "check_command": {
+                                switch ($value) {
+                                        case "other": {
+                                                echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The check_command test did not produce a decisive result (status: \"other\")." . $fmt["reset"]. "\n");
+                                                break; }
+                                        case "down": {
+                                                echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the check_command test." . $fmt["reset"]. "\n");
+                                                break; }
+                                        case "unknown": {
+                                                echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The check_command test did not produce a decisive result (status: \"unknown\")." . $fmt["reset"]. "\n");
+                                                break; }
+                                        case "up": {
+                                                echo($fmt["green"]. "PASS:" .$fmt["reset"] . " The service has passed the check_command test." . $fmt["reset"]. "\n");
+                                                break; }
+                                        }
+                                break; }
+
+			case "socket_connect": {
+				switch ($value) {
+					case "other": {
+						echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The socket_connect test did not produce a decisive result (status: \"other\")." . $fmt["reset"]. "\n");
+						break; }
+					case "down": {
+						echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the socket_connect test." . $fmt["reset"]. "\n");
+						break; }
+					case "unknown": {
+						echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The socket_connect test did not produce a decisive result (status: \"unknown\")." . $fmt["reset"]. "\n");
+						break; }
+					case "up": {
+						echo($fmt["green"]. "PASS:" .$fmt["reset"] . " The service has passed the socket_connect test." . $fmt["reset"]. "\n");
+						break; }
+					}
+				break; }
+
 			case "notification":
 				// TODO: color-code the $value
 				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A notification has been sent regarding the service status (" . $fmt["bold"] . $value . $fmt["reset"] .")." . "\n");
 				break;
+
+			case "restart_attempted":
+				// TODO: color-code the $value
+				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A service restart has been attempted." . $fmt["reset"] . "\n");
+				break;
+
+			case "socket_failure_threshold":
+
+				if ($value < 1) {
+
+	                                echo($fmt["green"] . "PASS:" . $fmt["reset"] . " The service failed the socket_connect check, but has not exceeded the socket failure threshold." . $fmt["reset"] . "\n");
+				} elseif ($value >=1) {
+
+					echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the socket_connect check and has exceeded the socket failure threshold." . $fmt["reset"]. "\n");
+				}
+				break;
+
+			case "tcp_transaction_log":
+				echo( $fmt["bold"] . "INFO:" .$fmt["reset"] . " The service check produced a TCP Transaction Log:\n" . $fmt["dim"] . $value . $fmt["reset"] . "\n");
+				break;
+
 			default:
 				echo($fmt["red"] . "META: The attribute $attribute has no explanation." . $fmt["reset"] ."\n");
 				break;
@@ -304,8 +354,17 @@ EOD;
 		}
 
 	} else {
-		$logdata = file_get_contents($argv[1]);
-	}
+
+		// TODO: <(cat file1.log file2.log) as a file descriptor only seems to make the script read the second file, find out if this can be compensated for in PHP
+
+		if (preg_match("/^\/dev\/(fd\/[0-9]{1,})$/", $argv[1])) { // in case we're using a file descriptor instead of a real file
+			preg_match("/^\/dev\/(fd\/[0-9]{1,})$/", $argv[1], $log_load_fd);
+ 			$logdata = file_get_contents("php://".$log_load_fd[1]);
+		} else {
+			$logdata = file_get_contents($argv[1]);
+		}
+
+}
 
 //	$parser->loadEntry($logdata);
 

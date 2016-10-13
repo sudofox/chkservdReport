@@ -111,14 +111,39 @@
 		// PASS:	(green)		Regarding something that contributes to the decision that a service should be marked as up by chkservd
 		// DOWN: 	(red, bold)	Service has been marked as down
 		// RECOVERED:	(green, bold)	Service has been marked as recovered
+		// UP:		(green, bold)	Service has conditionally passed the service check. (e.g. socket failure threshold not exceeded)
 		// ACTION:	(yellow, bold)	Action has been taken (email notification sent, service restart attempted, etc)
+
+		// We can determine whether ChkServd.pm determined a service as down by checking the notification attribute, as that logic is one with the "should we notify?/notification type" logic
+
+                echo($fmt["bold"] . "INFO: Service name: {$check["service_name"]}{$fmt["reset"]}\n");
+		unset($check["service_name"]);
+
+
+
+		// Is the service failed, recovered, or yet to be determined (in case of tests involving multiple required checks, such as socket_failure_threshold)?
+		$serviceFailureStatus = (isset($check["notification"])) ? $check["notification"] : "none";
+
+		switch($serviceFailureStatus) {
+
+			case "failed":
+				echo( $fmt["bold"] . $fmt["red"] . "DOWN:" . $fmt["reset"] . $fmt["red"] ." The service {$fmt["bold"]}failed{$fmt["reset"]}{$fmt["red"]} the service check and was marked as down." . $fmt["reset"] . "\n");
+				break;
+			case "recovered";
+				echo( $fmt["bold"] . $fmt["green"] . "RECOVERED:" . $fmt["reset"] . $fmt["green"] ." The service {$fmt["bold"]}passed{$fmt["reset"]}{$fmt["green"]} the service check and was marked as having recovered from the previous failure." . $fmt["reset"] . "\n");
+				break;
+			default:
+			case "none":
+				echo( $fmt["bold"] . $fmt["green"] . "UP:" . $fmt["reset"] . $fmt["green"] ." The service {$fmt["bold"]}conditionally passed{$fmt["reset"]}{$fmt["green"]} the service check, and has not been marked as down." . $fmt["reset"] . "\n");
+				break;
+
+			}
+
+
 		foreach($check as $attribute => $value) {
 
 			switch($attribute) {
 
-			case "service_name":
-				echo($fmt["bold"] . "INFO: Service name: $value" . $fmt["reset"] . "\n");
-				break;
 			case "fail_count":
 				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed ".$fmt["bold"]. $value . $fmt["reset"]. " consecutive service check(s).". "\n");
 				break;
@@ -157,8 +182,8 @@
 				break; }
 
 			case "notification":
-				// TODO: color-code the $value
-				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A notification has been sent regarding the service status (" . $fmt["bold"] . $value . $fmt["reset"] .")." . "\n");
+				$statusColor = ($value == "recovered") ? $fmt["green"] : $fmt["red"];
+				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A notification has been sent regarding the service status (" . $fmt["bold"] . $statusColor . $value . $fmt["reset"] . $fmt["yellow"] .")." .$fmt["reset"]. "\n");
 				break;
 
 			case "restart_attempted":
@@ -181,13 +206,21 @@
 				echo( $fmt["bold"] . "INFO:" .$fmt["reset"] . " The service check produced a TCP Transaction Log:\n" . $fmt["dim"] . $value . $fmt["reset"] . "\n");
 				break;
 
+			case "http_service_auth":
+				// this line is logged immediately _before_ Chkservd sends a request to the relevant service (GET /.__cpanel__service__check__./serviceauth?sendkey= with a key at the end)
+				// therefore, it does not indicate whether that was successful or not
+				echo ( $fmt["bold"] . "INFO:" . $fmt["reset"] . " An HTTP request was made to the service to test service authentication.\n");
+				break;
+			case "socket_service_auth":
+				echo ( $fmt["bold"] . "INFO:" . $fmt["reset"] . " A TCP-based (socket) request was made to the service to test service authentication.\n");
+				break;
 			default:
 				echo($fmt["red"] . "META: The attribute $attribute has no explanation." . $fmt["reset"] ."\n");
 				break;
 
 				}
-			}
 
+			}
 	}
 
 
@@ -329,7 +362,7 @@ Usage: ./parse_chkservd.php <filename> [<number of lines to parse, counting back
 
 EOD;
 
-	
+
 	if (!isset($argv[1]) || !file_exists($argv[1])) {
 		exit($usage);
 	}
@@ -393,13 +426,22 @@ $parser->timeline[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T 
 }
 
 
+// Explain each attribute in each service check
+
+// TODO: We may consider omitting service checks in which nothing happened from the timeline for efficiency's sake, depending on how the timeline ends up being handled
+
 foreach($parser->timeline as $point) {
+	if (!empty($point["services"])) { // skip if nothing happened for this check
 
-// var_export($parser->timeline);
+		echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
 
-	foreach($point["services"] as $service) {
-		echo "\n";
-		$parser->explainServiceCheckResult($service);
-	}
+//		var_export($parser->timeline);
 
+		foreach($point["services"] as $service) {
+			echo "\n";
+			$parser->explainServiceCheckResult($service);
+			}
+			echo "\n";
+
+		}
 }

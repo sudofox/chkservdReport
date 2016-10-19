@@ -6,9 +6,10 @@
 	// chkservd entry parser
 	class chkservdParser {
 		var $checkTime;
-		var $downServices;	// unresolved down services, used for comparison between previous and next check
+		var $systemState;	// unresolved down services, used for comparison between previous and next check
 		var $entryData;		// current log entry being processed.
-		public $timeline = array();		// a timeline of when things happen: services gone down, back up, restart attempts, currently down, etc.
+		public $timeline = array();	// this is what will be directly formatted into the final report of service failures and recoveries.
+		public $eventList = array();	// a list of when things happen: services gone down, back up, restart attempts, etc.
 		public $servicesList = array();
 		// list of services, the names being in the same order as $serviceCheckResults
 		public $serviceCheckResults = array();
@@ -354,6 +355,64 @@ $serviceBreakdown = array("service_name" => $serviceBreakdown["service_name"]) +
 return $serviceBreakdown;
 }	// end function
 
+
+function parseIntoTimeline($event) {
+
+	//dummy function at the moment
+
+/*
+
+
+Timeline:
+
+
+Types of events to be passed to $timeline handler:
+
+- Service marked as down
+- Service marked as recovered
+
+During processing, there is a $systemState array that contains $systemState["down_services"] with $systemState["down_services"]["example_service"]["unix_timestamp_when_service_went_down"]
+
+
+Pseudocode:
+
+if ($service is marked as down) {
+	if ($service was already down) do nothing;
+	if ($service was not previously marked down) add to $timeline; update $systemState;
+	}
+if ($service is marked as recovered) {
+	if ($service was not previously down) do nothing; // probably at the beginning of the log excerpt read by the script
+	if ($service was previously marked as down) add to $timeline with $downtime_duration; update $systemState;
+}
+
+
+$timeline structure:
+
+Organized by ["timestamp"]
+
+$service has gone down
+$service has recovered (total downtime: $downtime_duration)
+
+
+Output will be something like this:
+
+2015-11-04 16:47:33 -0500 == lfd has gone down
+2015-11-10 08:46:47 -0500 == lfd has recovered, total downtime: 5 days, 15 hours, 59 minutes, 14 seconds
+2016-01-25 05:44:34 -0500 == httpd has gone down
+2016-01-25 06:03:53 -0500 == httpd has recovered, total downtime: 19 minutes, 19 seconds
+
+
+
+
+*/
+
+
+
+
+	}
+
+
+
 } // end class
 
 
@@ -416,30 +475,32 @@ foreach (current($splitLogEntries) as $index => $entry) {
 
 $check = $parser->loadEntry($entry);
 
-$parser->timeline[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"]);
+$parser->eventList[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"]);
 
 // Just a note, we convert the timestamps into UNIX timestamps, which frees us to convert them back into a formatted time string with our desired Timezone, by default, America/New_York
-$parser->timeline[$check["timestamp"]]["timestamp"] = $check["timestamp"];
+$parser->eventList[$check["timestamp"]]["timestamp"] = $check["timestamp"];
 
-$parser->timeline[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T %z", $check["timestamp"]);
+$parser->eventList[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T %z", $check["timestamp"]);
 
 }
 
 
 // Explain each attribute in each service check
 
-// TODO: We may consider omitting service checks in which nothing happened from the timeline for efficiency's sake, depending on how the timeline ends up being handled
+// TODO: We may consider omitting service checks in which nothing happened from the eventList for efficiency's sake, depending on how the eventList ends up being handled
 
-foreach($parser->timeline as $point) {
+foreach($parser->eventList as $point) {
 	if (!empty($point["services"])) { // skip if nothing happened for this check
 
 		echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
 
-//		var_export($parser->timeline);
+//		var_export($parser->eventList);
 
 		foreach($point["services"] as $service) {
 			echo "\n";
 			$parser->explainServiceCheckResult($service);
+
+			// feed into timeline event generator function here
 			}
 			echo "\n";
 

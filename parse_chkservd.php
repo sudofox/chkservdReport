@@ -6,8 +6,8 @@
 	// chkservd entry parser
 	class chkservdParser {
 		var $checkTime;
-		var $systemState;	// unresolved down services, used for comparison between previous and next check
 		var $entryData;		// current log entry being processed.
+		public $systemState = array();	// unresolved down services, used for comparison between previous and next check
 		public $timeline = array();	// this is what will be directly formatted into the final report of service failures and recoveries.
 		public $eventList = array();	// a list of when things happen: services gone down, back up, restart attempts, etc.
 		public $servicesList = array();
@@ -356,14 +356,30 @@ return $serviceBreakdown;
 }	// end function
 
 
-function parseIntoTimeline($event) {
+function parseIntoTimeline($event, $timestamp) {
 
-	//dummy function at the moment
+//var_export($event);
+
+/*
+
+If this exists, the service is down:
+
+	$systemState["down"]["exim"]
+
+This is the number of times a restart has been attempted:
+
+	$systemState["down"]["exim"]["restart_attempts"] = 10;
+
+This is the unix timestamp of when the service went down
+
+	$systemState["down"]["exim"]["down_since"] = 1477500323;
+
+*/
 
 /*
 
 
-Timeline:
+Timeline draft:
 
 
 Types of events to be passed to $timeline handler:
@@ -406,10 +422,52 @@ Output will be something like this:
 
 */
 
+if (isset($event["notification"])) {
+	switch ($event["notification"]) {
+		case "failed":
+			if( isset($this->systemState["down"][$event["service_name"]])) {
+				if ($event["restart_attempted"]) {
+					$this->systemState["down"][$event["service_name"]]["restart_attempts"]++;
+				}
+				return;
+			}
+			else {
+				$this->systemState["down"][$event["service_name"]]["down_since"] = $timestamp;
+				$this->systemState["down"][$event["service_name"]]["restart_attempts"] = 1;
 
+				$this->timeline[$timestamp][$event["service_name"]]["status"] = "failed";
+				}
+			return;
+			break;
+		case "recovered":
+			if (!isset($this->systemState["down"][$event["service_name"]])) {
+				return; // ignore this - input data does not include when the service first went down
+			 }
 
+			elseif (isset($this->systemState["down"][$event["service_name"]])) {
 
+				$this->timeline[$timestamp][$event["service_name"]]["status"] = "recovered";
+				$this->timeline[$timestamp][$event["service_name"]]["down_since"] = $this->systemState["down"][$event["service_name"]]["down_since"];
+				$this->timeline[$timestamp][$event["service_name"]]["restart_attempts"] = $this->systemState["down"][$event["service_name"]]["restart_attempts"];
+				$this->timeline[$timestamp][$event["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$event["service_name"]]["down_since"]);
+
+				unset($this->systemState["down"][$event["service_name"]]);
+
+				return;
+				}
+			break;
+		default:
+			return;
+			break;
+
+		}
 	}
+}
+
+
+
+
+
 
 
 
@@ -462,6 +520,7 @@ EOD;
 
 // Parse out all chkservd log entries into individual array elements.
 
+error_log("DEBUG: Loading log file..."); // DEBUGLINE
 
 preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $logdata, $splitLogEntries);	// parse input data into unique elements with one raw chkservd entry per element
 
@@ -471,6 +530,9 @@ foreach (current($splitLogEntries) as $index => $entry) {
 }
 
 // Now we can go over each service check one-by-one.
+
+error_log("DEBUG: Extracting relevant events..."); // DEBUGLINE
+
 foreach (current($splitLogEntries) as $index => $entry) {
 
 $check = $parser->loadEntry($entry);
@@ -488,21 +550,62 @@ $parser->eventList[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T
 // Explain each attribute in each service check
 
 // TODO: We may consider omitting service checks in which nothing happened from the eventList for efficiency's sake, depending on how the eventList ends up being handled
+error_log("DEBUG: Parsing events into timeline..."); // DEBUGLINE
 
 foreach($parser->eventList as $point) {
 	if (!empty($point["services"])) { // skip if nothing happened for this check
 
-		echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
+//		echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
 
-//		var_export($parser->eventList);
 
 		foreach($point["services"] as $service) {
-			echo "\n";
-			$parser->explainServiceCheckResult($service);
+//			echo "\n";
+//			$parser->explainServiceCheckResult($service);
 
 			// feed into timeline event generator function here
+			$parser->parseIntoTimeline($service, $point["timestamp"]);
 			}
-			echo "\n";
+//			echo "\n";
 
 		}
+
 }
+
+error_log("DEBUG: Timeline:");
+
+var_export($parser->timeline);
+
+error_log("DEBUG: systemState:");
+
+var_dump($parser->systemState);
+
+
+// output timeline
+
+foreach($parser->timeline as $timestamp => $timelineEntry) {
+
+	foreach($timelineEntry as $entry["service_name"] => $entry) {
+
+		switch ($entry["status"]) {
+
+			case "failed":
+				echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has gone down.\n";
+				break;
+
+			case "recovered":
+				echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.\n";
+				break;
+
+			default:
+				break;
+		}
+
+
+	}
+
+}
+
+
+// output system state for currently-down services
+
+var_dump($parser->systemState);

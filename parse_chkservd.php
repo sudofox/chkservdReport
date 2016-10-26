@@ -5,13 +5,13 @@
 	// parse chkservd log and return a pretty summary of service failures and whatnot
 	// chkservd entry parser
 	class chkservdParser {
-		var $checkTime;
-		var $entryData;		// current log entry being processed.
-		public $systemState = array();	// unresolved down services, used for comparison between previous and next check
-		public $timeline = array();	// this is what will be directly formatted into the final report of service failures and recoveries.
-		public $eventList = array();	// a list of when things happen: services gone down, back up, restart attempts, etc.
-		public $servicesList = array();
-		// list of services, the names being in the same order as $serviceCheckResults
+
+		var $monitoredServices = array(); 	// array of the names of monitored services. Used for detecting when monitoring for a service is disabled.
+		var $firstCheck = true; 		// Used to check if we are processing our first service check or not
+		public $systemState = array();		// List of unresolved down services, used for comparison between previous and next check
+		public $timeline = array();		// This timeline will be directly formatted into the final report of service failures and recoveries.
+		public $eventList = array();		// A list of when things happen: services gone down, back up, restart attempts, service monitoring settings changes, etc.
+		public $servicesList = array();		// list of services, the names being in the same order as $serviceCheckResults
 		public $serviceCheckResults = array();
 
 		// -- Function Name : loadEntry
@@ -57,16 +57,51 @@
 
 		}
 
+		// Detect if service monitoring has been disabled for a service.
+
+/*
+
+$servicesList is the list of services that were checked in this chkservd entry
+$this->monitoredServices is an private array in scope of the class with a list of monitored services -- it is updated whenever the list of monitored services changes.
+*/
+if ($this->firstCheck) {
+	$this->firstCheck = false;
+	$this->monitoredServices = $servicesList; // fill $monitoredService and proceed as normal;
+}
+else {
+	if (count(array_diff($servicesList, $this->monitoredServices)) == 0 && count(array_diff($this->monitoredServices, $servicesList)) == 0) {
+		// do nothing
+	} else {
+		$newServices = array_diff($servicesList, $this->monitoredServices);
+		$removedServices = array_diff($this->monitoredServices, $servicesList);
+		foreach ($newServices as $newService) {
+			$this->entryData["services"][$newService]["monitoring_enabled"] = true;
+		}
+
+		foreach($removedServices as $removedService) {
+			$this->entryData["services"][$removedService]["monitoring_disabled"] = true;
+		}
+
+	$this->monitoredServices = $servicesList;
+
+	}
+}
+
 
 
 		foreach ($serviceChecks_associative as $service) {
 			$serviceInfo =	$this->analyzeServiceCheck($service);
-			$this->entryData["services"][$serviceInfo["service_name"]] = $serviceInfo;
+			$entryData["services"][$serviceInfo["service_name"]] = $serviceInfo;
 
 		}
-		$this->entryData["timestamp"] = $entry_timestamp; // unix timestamp from service check
 
-	return $this->entryData;
+
+
+
+		// Set timestamp for service check
+		$entryData["timestamp"] = $entry_timestamp; // unix timestamp from service check
+
+	return $entryData;
 
 }
 
@@ -80,9 +115,12 @@
 
 		foreach($checkData as $service) {
 
-		if (	(isset($service["check_command"]) && $service["check_command"] == "down") ||
-			(isset($service["socket_connect"]) && $service["socket_connect"] == "down") ||
-			 isset($service["notification"]) || isset($service["socket_failure_threshold"]) ) {
+		if (	(isset($service["check_command"])	&&	$service["check_command"] == "down")	||
+			(isset($service["socket_connect"])	&&	$service["socket_connect"] == "down")	||
+			 isset($service["notification"])							||
+			 isset($service["socket_failure_threshold"])						||
+			 isset($service["monitoring_enabled"])							||
+			 isset($service["monitoring_disabled"]) ) {
 				$output[$service["service_name"]] = $service;
 
 				}
@@ -421,6 +459,16 @@ Output will be something like this:
 
 
 */
+	if (isset($event["monitoring_enabled"])) {
+
+		$this->timeline[$timestamp][$event["service_name"]]["monitoring_enabled"] = true;
+	}
+	if (isset($event["monitoring_disabled"])) {
+
+		$this->timeline[$timestamp][$event["service_name"]]["monitoring_disabled"] = true;
+
+}
+
 
 if (isset($event["notification"])) {
 	switch ($event["notification"]) {
@@ -462,6 +510,8 @@ if (isset($event["notification"])) {
 
 		}
 	}
+
+
 }
 
 
@@ -527,22 +577,18 @@ preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished
 // We need to throw away interrupted service checks (which abruptly end with "Service Check Interrupted\n")
 foreach (current($splitLogEntries) as $index => $entry) {
 	if ($splitLogEntries[1][$index] == "Interrupted") { unset($splitLogEntries[0][$index]); unset($splitLogEntries[1][$index]); continue; } // throw away service checks that have the capturing group returned as "Interrupted"
-}
+	}
 
 // Now we can go over each service check one-by-one.
 
 error_log("DEBUG: Extracting relevant events..."); // DEBUGLINE
 
 foreach (current($splitLogEntries) as $index => $entry) {
-
-$check = $parser->loadEntry($entry);
-
-$parser->eventList[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"]);
-
-// Just a note, we convert the timestamps into UNIX timestamps, which frees us to convert them back into a formatted time string with our desired Timezone, by default, America/New_York
-$parser->eventList[$check["timestamp"]]["timestamp"] = $check["timestamp"];
-
-$parser->eventList[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T %z", $check["timestamp"]);
+	$check = $parser->loadEntry($entry);
+	$parser->eventList[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"]);
+	// Just a note, we convert the timestamps into UNIX timestamps, which frees us to convert them back into a formatted time string with our desired Timezone, by default, America/New_York
+	$parser->eventList[$check["timestamp"]]["timestamp"] = $check["timestamp"];
+	$parser->eventList[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T %z", $check["timestamp"]);
 
 }
 
@@ -555,29 +601,29 @@ error_log("DEBUG: Parsing events into timeline..."); // DEBUGLINE
 foreach($parser->eventList as $point) {
 	if (!empty($point["services"])) { // skip if nothing happened for this check
 
-//		echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
+		echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
 
 
 		foreach($point["services"] as $service) {
-//			echo "\n";
-//			$parser->explainServiceCheckResult($service);
+			echo "\n";
+			$parser->explainServiceCheckResult($service);
 
 			// feed into timeline event generator function here
 			$parser->parseIntoTimeline($service, $point["timestamp"]);
 			}
-//			echo "\n";
+			echo "\n";
 
 		}
 
 }
 
-error_log("DEBUG: Timeline:");
+//error_log("DEBUG: Timeline:");
 
-var_export($parser->timeline);
+//var_export($parser->timeline);
 
-error_log("DEBUG: systemState:");
+//error_log("DEBUG: systemState:");
 
-var_dump($parser->systemState);
+//var_dump($parser->systemState);
 
 
 // output timeline

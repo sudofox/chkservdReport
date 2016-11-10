@@ -72,14 +72,18 @@ else {
 	if (count(array_diff($servicesList, $this->monitoredServices)) == 0 && count(array_diff($this->monitoredServices, $servicesList)) == 0) {
 		// do nothing
 	} else {
+		error_log("service monitoring changed");
 		$newServices = array_diff($servicesList, $this->monitoredServices);
 		$removedServices = array_diff($this->monitoredServices, $servicesList);
 		foreach ($newServices as $newService) {
 			$this->entryData["services"][$newService]["monitoring_enabled"] = true;
+			error_log("monitoring enabled for $newService"); 
 		}
 
 		foreach($removedServices as $removedService) {
 			$this->entryData["services"][$removedService]["monitoring_disabled"] = true;
+			error_log("monitoring disabled for $newService"); 
+
 		}
 
 	$this->monitoredServices = $servicesList;
@@ -105,30 +109,34 @@ else {
 
 }
 
-		// -- Function Name : extractRelevantEvents
-		// -- Params : $checkData (one of the elements within the entryData array)
-		// -- Purpose : Extracts relevant events from a service check, most notably downed/restored services
+	// -- Function Name : extractRelevantEvents
+	// -- Params : $checkData (one of the elements within the entryData array)
+	// -- Purpose : Extracts relevant events from a service check, most notably downed/restored services
 
-		function extractRelevantEvents($checkData) {
+	function extractRelevantEvents($checkData) {
+
 
 		$output = array();
 
 		foreach($checkData as $service) {
 
-		if (	(isset($service["check_command"])	&&	$service["check_command"] == "down")	||
-			(isset($service["socket_connect"])	&&	$service["socket_connect"] == "down")	||
-			 isset($service["notification"])							||
-			 isset($service["socket_failure_threshold"])						||
-			 isset($service["monitoring_enabled"])							||
-			 isset($service["monitoring_disabled"]) ) {
-				$output[$service["service_name"]] = $service;
-
+			if (	(isset($service["check_command"])	&&	$service["check_command"] == "down")	||
+				(isset($service["socket_connect"])	&&	$service["socket_connect"] == "down")	||
+				 isset($service["notification"])							||
+				 isset($service["socket_failure_threshold"])						||
+				 isset($service["monitoring_enabled"])							||
+				 isset($service["monitoring_disabled"]) ) {
+					$output[$service["service_name"]] = $service;
 				}
+		if (isset($service["monitoring_disabled"]) ||  isset($service["monitoring_enabled"])) {
+			error_log("DEBUG: monitoring disabled/enabled:");
+			var_dump($service);
 			}
+		}
 
 	return $output;
 
-		}
+	}
 
 		// -- Function Name : explainServiceCheckResult
 		// -- Params :	$check
@@ -459,6 +467,7 @@ Output will be something like this:
 
 
 */
+
 	if (isset($event["monitoring_enabled"])) {
 
 		$this->timeline[$timestamp][$event["service_name"]]["monitoring_enabled"] = true;
@@ -523,54 +532,113 @@ if (isset($event["notification"])) {
 
 } // end class
 
+// Argument parsing and usage
+
+
+
+
 
 	$usage = <<<EOD
-Usage: ./parse_chkservd.php <filename> [<number of lines to parse, counting back from last entry>]
+Usage: ./parse_chkservd.php -f <filename> [<additional arguments>]
+
+Required arguments
+-f	filename of chkservd logfile
+
+Optional arguments
+-n	number of lines to read from the end of the file
+
+Verbosity (these are optional arguments)
+
+-vt	Show timeline event explanations
+-vp	Show when we reach each step in script execution.
+
 
 EOD;
 
 
-	if (!isset($argv[1]) || !file_exists($argv[1])) {
-		exit($usage);
-	}
-	date_default_timezone_set("America/New_York"); // for later calls to strftime
+date_default_timezone_set("America/New_York"); // for later calls to strftime
 
-	$parser = new chkservdParser;
+$options = getopt("f:n::v:");
+
+$parser = new chkservdParser;
+
+
+// Validation of arguments
+
+// -f filename
+
+if (!isset($options["f"])) { exit($usage); } // if f is not set
+if (is_array($options["f"])) { exit("Error: You may only specify one file to read.\n\n$usage"); } // if multiple -f arguments are passed
+
+if (!file_exists($options["f"])) { exit("Error: Could not open file {$options["f"]}\n"); } // if file does not exist
+
+if (trim(fgets(fopen($options["f"], "r"))) != "Service Check Started") {
+                exit("ERROR: This does not appear to be a chkservd log file, or does not start with 'Service Check Started'.\n");
+        }
+
+// -v verbosity
+
+
+if (isset($options["v"])) {
+
+	// if there's just one verbosity flag
+
+	if (!is_array($options["v"]) && is_string($options["v"])) {
+
+		$flag = $options["v"];
+		unset($options["v"]);
+		$options["v"][$flag] = true;
+
+	} else { // if there's multiple verbosity flags
+
+		$verbosityFlags = array();
+		foreach($options["v"] as $key=>$flag) {
+			$verbosityFlags[$flag] = true;
+		}
+		unset($options["v"]);
+		foreach ($verbosityFlags as $key=>$flag) {
+			$options["v"][$key] = true;
+		}
+	}
+
+}
+	// if it's not set, set it to false (return value of isset)
+
+	$options["v"]["t"] = (isset($options["v"]["t"]));
+	$options["v"]["p"] = (isset($options["v"]["p"]));
+
+// -n number of lines to read (counting backwards from end of file)
 
 	// note:
 	// We might want to check the size of the chkservd log to ensure we don't run out of memory
-	// not implemented yet tho
+	// not implemented yet though
 
-	if (exec("head -n1 ".escapeshellarg($argv[1])) != "Service Check Started") {
-		exit("ERROR: This does not appear to be a chkservd log file.\n");
-	}
+   $logdata = "";
 
-	$logdata = "";
+        if (isset($options["n"]) && is_numeric($options["n"]) && $options["n"] > 0) {
+                exec("tail -n".escapeshellarg($options["n"])." ".escapeshellarg($options["f"]),$logtail);
 
-	if (isset($argv[2]) && is_numeric($argv[2]) && $argv[2] > 0) {
-		exec("tail -n".escapeshellarg($argv[2])." ".escapeshellarg($argv[1]),$logtail);
-		foreach($logtail as $line) {
-			$logdata .= $line."\n";
-		}
+                foreach($logtail as $line) {
+                        $logdata .= $line."\n";
+                }
 
-	} else {
+        } else {
 
-		// TODO: <(cat file1.log file2.log) as a file descriptor only seems to make the script read the second file, find out if this can be compensated for in PHP
+                // TODO: <(cat file1.log file2.log) as a file descriptor only seems to make the script read the second file, find out if this can be compensated for in PHP
 
-		if (preg_match("/^\/dev\/(fd\/[0-9]{1,})$/", $argv[1])) { // in case we're using a file descriptor instead of a real file
-			preg_match("/^\/dev\/(fd\/[0-9]{1,})$/", $argv[1], $log_load_fd);
- 			$logdata = file_get_contents("php://".$log_load_fd[1]);
-		} else {
-			$logdata = file_get_contents($argv[1]);
-		}
+                if (preg_match("/^\/dev\/(fd\/[0-9]{1,})$/", $options["f"])) { // in case we're using a file descriptor instead of a real file
+                        preg_match("/^\/dev\/(fd\/[0-9]{1,})$/", $options["f"], $log_load_fd);
+                        $logdata = file_get_contents("php://".$log_load_fd[1]);
+                } else {
+                        $logdata = file_get_contents($options["f"]);
+                }
 
 }
 
-//	$parser->loadEntry($logdata);
 
 // Parse out all chkservd log entries into individual array elements.
 
-error_log("DEBUG: Loading log file..."); // DEBUGLINE
+if ($options["v"]["p"]) { error_log("DEBUG: Loading log file...");  }
 
 preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $logdata, $splitLogEntries);	// parse input data into unique elements with one raw chkservd entry per element
 
@@ -581,7 +649,7 @@ foreach (current($splitLogEntries) as $index => $entry) {
 
 // Now we can go over each service check one-by-one.
 
-error_log("DEBUG: Extracting relevant events..."); // DEBUGLINE
+if ($options["v"]["p"]) { error_log("DEBUG: Extracting relevant events..."); } // DEBUGLINE
 
 foreach (current($splitLogEntries) as $index => $entry) {
 	$check = $parser->loadEntry($entry);
@@ -596,34 +664,32 @@ foreach (current($splitLogEntries) as $index => $entry) {
 // Explain each attribute in each service check
 
 // TODO: We may consider omitting service checks in which nothing happened from the eventList for efficiency's sake, depending on how the eventList ends up being handled
-error_log("DEBUG: Parsing events into timeline..."); // DEBUGLINE
+if ($options["v"]["p"]) {
+error_log("DEBUG: Parsing events into timeline...");
+}
 
 foreach($parser->eventList as $point) {
 	if (!empty($point["services"])) { // skip if nothing happened for this check
 
-		echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
+		if ($options["v"]["t"]) {
+			echo(exec("tput bold; tput setaf 6") . "Service check at ". $point["formatted_timestamp"] . exec("tput sgr0") . "\n");
+		}
 
 
 		foreach($point["services"] as $service) {
-			echo "\n";
-			$parser->explainServiceCheckResult($service);
+
+			if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($service); }
 
 			// feed into timeline event generator function here
+
 			$parser->parseIntoTimeline($service, $point["timestamp"]);
 			}
-			echo "\n";
 
-		}
+		if ($options["v"]["t"]) { echo "\n"; }
+
+	}
 
 }
-
-//error_log("DEBUG: Timeline:");
-
-//var_export($parser->timeline);
-
-//error_log("DEBUG: systemState:");
-
-//var_dump($parser->systemState);
 
 
 // output timeline
@@ -631,6 +697,15 @@ foreach($parser->eventList as $point) {
 foreach($parser->timeline as $timestamp => $timelineEntry) {
 
 	foreach($timelineEntry as $entry["service_name"] => $entry) {
+
+
+	                if (isset($entry["monitoring_enabled"])) {
+				echo strftime("%F %T %z", $timestamp) . " - Monitoring was enabled for {$entry["service_name"]}.\n";
+
+	                }
+        	        if (isset($entry["monitoring_disabled"])) {
+				echo strftime("%F %T %z", $timestamp) . " - Monitoring was disabled for {$entry["service_name"]}.\n";
+	                }
 
 		switch ($entry["status"]) {
 

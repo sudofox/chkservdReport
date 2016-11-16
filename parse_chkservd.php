@@ -64,6 +64,13 @@
 $servicesList is the list of services that were checked in this chkservd entry
 $this->monitoredServices is an private array in scope of the class with a list of monitored services -- it is updated whenever the list of monitored services changes.
 */
+
+		foreach ($serviceChecks_associative as $service) {
+			$serviceInfo =	$this->analyzeServiceCheck($service);
+			$entryData["services"][$serviceInfo["service_name"]] = $serviceInfo;
+
+		}
+
 if ($this->firstCheck) {
 	$this->firstCheck = false;
 	$this->monitoredServices = $servicesList; // fill $monitoredService and proceed as normal;
@@ -72,32 +79,29 @@ else {
 	if (count(array_diff($servicesList, $this->monitoredServices)) == 0 && count(array_diff($this->monitoredServices, $servicesList)) == 0) {
 		// do nothing
 	} else {
-		error_log("service monitoring changed");
+		//error_log("service monitoring changed");
 		$newServices = array_diff($servicesList, $this->monitoredServices);
 		$removedServices = array_diff($this->monitoredServices, $servicesList);
 		foreach ($newServices as $newService) {
-			$this->entryData["services"][$newService]["monitoring_enabled"] = true;
-			error_log("monitoring enabled for $newService"); 
-		}
+			$entryData["services"][$newService]["monitoring_enabled"] = true;
+//			error_log("monitoring enabled for $newService");
+			}
 
 		foreach($removedServices as $removedService) {
-			$this->entryData["services"][$removedService]["monitoring_disabled"] = true;
-			error_log("monitoring disabled for $newService"); 
+			$entryData["services"][$removedService]["monitoring_disabled"] = true;
+			$entryData["services"][$removedService]["service_name"] = $removedService;
+//			error_log("monitoring disabled for $removedService");
 
-		}
+			}
+
+
+	}
 
 	$this->monitoredServices = $servicesList;
 
-	}
 }
 
 
-
-		foreach ($serviceChecks_associative as $service) {
-			$serviceInfo =	$this->analyzeServiceCheck($service);
-			$entryData["services"][$serviceInfo["service_name"]] = $serviceInfo;
-
-		}
 
 
 
@@ -115,7 +119,6 @@ else {
 
 	function extractRelevantEvents($checkData) {
 
-
 		$output = array();
 
 		foreach($checkData as $service) {
@@ -128,10 +131,13 @@ else {
 				 isset($service["monitoring_disabled"]) ) {
 					$output[$service["service_name"]] = $service;
 				}
-		if (isset($service["monitoring_disabled"]) ||  isset($service["monitoring_enabled"])) {
-			error_log("DEBUG: monitoring disabled/enabled:");
-			var_dump($service);
+		/*
+if (isset($service["monitoring_disabled"]) ||  isset($service["monitoring_enabled"])) {
+			error_log("DEBUG: monitoring disabled/enabled: '{$service["service_name"]}'");
+		var_export($service);
+
 			}
+*/
 		}
 
 	return $output;
@@ -408,33 +414,15 @@ function parseIntoTimeline($event, $timestamp) {
 
 /*
 
-If this exists, the service is down:
-
-	$systemState["down"]["exim"]
-
-This is the number of times a restart has been attempted:
-
-	$systemState["down"]["exim"]["restart_attempts"] = 10;
-
-This is the unix timestamp of when the service went down
-
-	$systemState["down"]["exim"]["down_since"] = 1477500323;
-
-*/
-
-/*
-
-
-Timeline draft:
-
-
+If this exists, the service is down:				$systemState["down"]["exim"]
+This is the number of times a restart has been attempted:	$systemState["down"]["exim"]["restart_attempts"] = 10;
+This is the unix timestamp of when the service went down: 	$systemState["down"]["exim"]["down_since"] = 1477500323;
 Types of events to be passed to $timeline handler:
 
 - Service marked as down
 - Service marked as recovered
 
 During processing, there is a $systemState array that contains $systemState["down_services"] with $systemState["down_services"]["example_service"]["unix_timestamp_when_service_went_down"]
-
 
 Pseudocode:
 
@@ -464,8 +452,6 @@ Output will be something like this:
 2016-01-25 06:03:53 -0500 == httpd has recovered, total downtime: 19 minutes, 19 seconds
 
 
-
-
 */
 
 	if (isset($event["monitoring_enabled"])) {
@@ -474,7 +460,18 @@ Output will be something like this:
 	}
 	if (isset($event["monitoring_disabled"])) {
 
-		$this->timeline[$timestamp][$event["service_name"]]["monitoring_disabled"] = true;
+			$this->timeline[$timestamp][$event["service_name"]]["monitoring_disabled"] = true;
+
+			if( isset($this->systemState["down"][$event["service_name"]])) {
+
+				$this->timeline[$timestamp][$event["service_name"]]["status_changed_due_to_disabled_monitoring"] = true; 
+                                $this->timeline[$timestamp][$event["service_name"]]["down_since"] = $this->systemState["down"][$event["service_name"]]["down_since"];
+                                $this->timeline[$timestamp][$event["service_name"]]["restart_attempts"] = $this->systemState["down"][$event["service_name"]]["restart_attempts"];
+                                $this->timeline[$timestamp][$event["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$event["service_name"]]["down_since"]);
+
+                                unset($this->systemState["down"][$event["service_name"]]); // Service is no longer monitored, so we should not mark it as down any longer.
+			}
+
 
 }
 
@@ -694,6 +691,7 @@ foreach($parser->eventList as $point) {
 
 // output timeline
 
+echo "Timeline: \n";
 foreach($parser->timeline as $timestamp => $timelineEntry) {
 
 	foreach($timelineEntry as $entry["service_name"] => $entry) {
@@ -701,27 +699,34 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 
 	                if (isset($entry["monitoring_enabled"])) {
 				echo strftime("%F %T %z", $timestamp) . " - Monitoring was enabled for {$entry["service_name"]}.\n";
+		                }
 
-	                }
         	        if (isset($entry["monitoring_disabled"])) {
-				echo strftime("%F %T %z", $timestamp) . " - Monitoring was disabled for {$entry["service_name"]}.\n";
-	                }
+				if (isset($entry["status_changed_due_to_disabled_monitoring"])) {
+                                        echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} no longer marked down (monitoring was disabled). Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.\n";
 
-		switch ($entry["status"]) {
+					}
+				else {
+					echo strftime("%F %T %z", $timestamp) . " - Monitoring was disabled for {$entry["service_name"]}.\n";
+					}
 
-			case "failed":
-				echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has gone down.\n";
-				break;
+				}
 
-			case "recovered":
-				echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.\n";
-				break;
+			if(isset($entry["status"])) {
+				switch ($entry["status"]) {
 
-			default:
-				break;
+					case "failed":
+						echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has gone down.\n";
+						break;
+
+					case "recovered":
+						echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.\n";
+						break;
+
+					default:
+						break;
+				}
 		}
-
-
 	}
 
 }
@@ -729,4 +734,16 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 
 // output system state for currently-down services
 
-var_dump($parser->systemState);
+if (isset($parser->systemState["down"]) && count($parser->systemState["down"]) > 0 ) {
+	echo "\nServices currently marked down:\n";
+
+	foreach($parser->systemState["down"] as $name=>$service) {
+	echo $name.": \t down since ".strftime("%F %T %z", $service["down_since"]) .", {$service["restart_attempts"]} restart attempt(s).\n";
+
+	}
+
+} else {
+
+echo "\nServices currently marked down: none\n";
+
+}

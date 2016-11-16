@@ -1,6 +1,5 @@
 #!/usr/bin/env php
 <?php
-
 	// by aburk
 	// parse chkservd log and return a pretty summary of service failures and whatnot
 	// chkservd entry parser
@@ -687,18 +686,22 @@ if (isset($options["v"])) {
 
 if ($options["v"]["p"]) { error_log("DEBUG: Loading log file...");  }
 
-echo "Memory usage before preg_match_all: ".memory_get_usage(true)." bytes\n";
+//echo "Memory usage before preg_match_all: ".memory_get_usage(true)." bytes\n"; // TODO
+
+// This can sometimes cause out-of-memory issues with PHP. Might be ways to better optimize it.
 
 preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $logdata, $splitLogEntries);	// parse input data into unique elements with one raw chkservd entry per element
-echo "Memory usage after preg_match_all: ".memory_get_usage(true)." bytes\n";
+//echo "Memory usage after preg_match_all: ".memory_get_usage(true)." bytes\n"; // TODO
 unset($logdata);
-echo "Memory usage after unsetting \$logdata: ".memory_get_usage(true)." bytes\n";
+//echo "Memory usage after unsetting \$logdata: ".memory_get_usage(true)." bytes\n"; // TODO
 
 // We need to throw away interrupted service checks (which abruptly end with "Service Check Interrupted\n")
 foreach (current($splitLogEntries) as $index => $entry) {
 	if ($splitLogEntries[1][$index] == "Interrupted") { unset($splitLogEntries[0][$index]); unset($splitLogEntries[1][$index]); continue; } // throw away service checks that have the capturing group returned as "Interrupted"
 	}
-
+//echo "Memory usage before unsetting \$splitLogEntries[1] (used while removing interrupted service checks): ".memory_get_usage(true)." bytes\n"; // TODO
+unset($splitLogEntries[1]);
+//echo "Memory usage after unsetting \$splitLogEntries[1] (used while removing interrupted service checks): ".memory_get_usage(true)." bytes\n"; // TODO
 // Now we can go over each service check one-by-one.
 
 if ($options["v"]["p"]) { error_log("DEBUG: Extracting relevant events..."); } // DEBUGLINE
@@ -712,11 +715,11 @@ foreach (current($splitLogEntries) as $index => $entry) {
 
 }
 
-echo "Memory usage after running each log entry into loadEntry: ".memory_get_usage(true)." bytes\n";
+//echo "Memory usage after running each log entry into loadEntry: ".memory_get_usage(true)." bytes\n"; // TODO
 
 unset($splitLogEntries);
 
-echo "Memory usage after unsetting \$splitLogEntries: ".memory_get_usage(true)." bytes\n";
+//echo "Memory usage after unsetting \$splitLogEntries: ".memory_get_usage(true)." bytes\n"; // TODO
 
 // Explain each attribute in each service check
 
@@ -725,7 +728,9 @@ if ($options["v"]["p"]) {
 error_log("DEBUG: Parsing events into timeline...");
 }
 
-foreach($parser->eventList as $point) {
+//echo "Memory usage before parsing the eventList into the timeline: ".memory_get_usage(true)." bytes\n"; // TODO
+
+foreach($parser->eventList as $key=>$point) {
 	if (!empty($point["services"])) { // skip if nothing happened for this check
 
 		if ($options["v"]["t"]) {
@@ -745,8 +750,13 @@ foreach($parser->eventList as $point) {
 		if ($options["v"]["t"]) { echo "\n"; }
 
 	}
+	unset($parser->eventList[$key]);
 
 }
+
+//echo "Memory usage after parsing the eventList into the timeline: ".memory_get_usage(true)." bytes\n"; // TODO
+unset($parser->eventList); 
+//echo "Memory usage after completely unsetting the eventList: ".memory_get_usage(true)." bytes\n"; // TODO
 
 
 // output timeline
@@ -759,17 +769,17 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 
 
 	                if (isset($entry["monitoring_enabled"])) {
-echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["bold"]}enabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["bold"]}enabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
 		                }
 
         	        if (isset($entry["monitoring_disabled"])) {
 				if (isset($entry["status_changed_due_to_disabled_monitoring"])) {
-echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Service {$entry["service_name"]} no longer marked down (monitoring was disabled)." 
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Service {$entry["service_name"]} no longer marked down (monitoring was disabled)." 
 ." Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]}{$fmt["reset"]}\n";
 
 					}
 				else {
-echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} -{$fmt["dim"]} Monitoring was {$fmt["bold"]}disabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} -{$fmt["dim"]} Monitoring was {$fmt["bold"]}disabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
 					}
 
 				}
@@ -778,11 +788,11 @@ echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} -{$fmt["
 				switch ($entry["status"]) {
 
 					case "failed":
-echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["bold"]}{$fmt["red"]}Service {$entry["service_name"]} has gone down.{$fmt["reset"]}\n";
+			echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["bold"]}{$fmt["red"]}Service {$entry["service_name"]} has gone down.{$fmt["reset"]}\n";
 						break;
 
 					case "recovered":
-echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["green"]}Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.{$fmt["reset"]}\n";
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["green"]}Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.{$fmt["reset"]}\n";
 						break;
 
 					default:

@@ -79,18 +79,15 @@ else {
 	if (count(array_diff($servicesList, $this->monitoredServices)) == 0 && count(array_diff($this->monitoredServices, $servicesList)) == 0) {
 		// do nothing
 	} else {
-		//error_log("service monitoring changed");
 		$newServices = array_diff($servicesList, $this->monitoredServices);
 		$removedServices = array_diff($this->monitoredServices, $servicesList);
 		foreach ($newServices as $newService) {
 			$entryData["services"][$newService]["monitoring_enabled"] = true;
-//			error_log("monitoring enabled for $newService");
 			}
 
 		foreach($removedServices as $removedService) {
 			$entryData["services"][$removedService]["monitoring_disabled"] = true;
 			$entryData["services"][$removedService]["service_name"] = $removedService;
-//			error_log("monitoring disabled for $removedService");
 
 			}
 
@@ -131,13 +128,6 @@ else {
 				 isset($service["monitoring_disabled"]) ) {
 					$output[$service["service_name"]] = $service;
 				}
-		/*
-if (isset($service["monitoring_disabled"]) ||  isset($service["monitoring_enabled"])) {
-			error_log("DEBUG: monitoring disabled/enabled: '{$service["service_name"]}'");
-		var_export($service);
-
-			}
-*/
 		}
 
 	return $output;
@@ -422,7 +412,6 @@ return $serviceBreakdown;
 
 function parseIntoTimeline($event, $timestamp) {
 
-//var_export($event);
 
 /*
 
@@ -541,36 +530,63 @@ if (isset($event["notification"])) {
 
 } // end class
 
+// Handle memory_limit failures
+
+function shutdown_handler() {
+
+	$error = error_get_last();
+	if (preg_match("/Allowed memory size of/",$error["message"])) {
+		if (posix_isatty(STDOUT)) {
+			echo(exec("tput setaf 1")."Memory limit of ".ini_get("memory_limit")." has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).". exec("tput sgr0")."\n");
+		} else {
+		echo("Memory limit of ".ini_get("memory_limit")." has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).\n");
+                }
+	}
+}
+
+register_shutdown_function("shutdown_handler");
+
+
 // Argument parsing and usage
 
 	$usage = <<<EOD
 Usage: ./parse_chkservd.php -f <filename> [<additional arguments>]
+
+If you wish to pass the arguments in any order, you must omit the space after the flag letter.
+
+(e.g. -fchkservd.log -m500M -n100000)
 
 Required arguments
 -f	filename of chkservd logfile
 
 Optional arguments
 -n	number of lines to read from the end of the file
+-m	manually set the memory_limit - be careful with this! ( e.g. -m128M )
 
 Verbosity and visual options (these are optional arguments)
 
 -vt	Show timeline event explanations
 -vp	Show when we reach each step in script execution.
--vc	Colorise output regardless of whether it is entering a pipe to a file/second program or not.
+-vc	Colorize output regardless of whether it is entering a pipe to a file/second program or not.
+
 
 EOD;
 
 
 date_default_timezone_set("America/New_York"); // for later calls to strftime
 
-$options = getopt("f:n::v:");
+$options = getopt("f:n::m::v:");
 
 $parser = new chkservdParser;
 
 
 // Validation of arguments
 
+if (isset($options["m"])) { ini_set("memory_limit", $options["m"]); }
+
 // -f filename
+
+
 
 if (!isset($options["f"])) { exit($usage); } // if f is not set
 if (is_array($options["f"])) { exit("Error: You may only specify one file to read.\n\n$usage"); } // if multiple -f arguments are passed
@@ -671,7 +687,12 @@ if (isset($options["v"])) {
 
 if ($options["v"]["p"]) { error_log("DEBUG: Loading log file...");  }
 
+echo "Memory usage before preg_match_all: ".memory_get_usage(true)." bytes\n";
+
 preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $logdata, $splitLogEntries);	// parse input data into unique elements with one raw chkservd entry per element
+echo "Memory usage after preg_match_all: ".memory_get_usage(true)." bytes\n";
+unset($logdata);
+echo "Memory usage after unsetting \$logdata: ".memory_get_usage(true)." bytes\n";
 
 // We need to throw away interrupted service checks (which abruptly end with "Service Check Interrupted\n")
 foreach (current($splitLogEntries) as $index => $entry) {
@@ -691,6 +712,11 @@ foreach (current($splitLogEntries) as $index => $entry) {
 
 }
 
+echo "Memory usage after running each log entry into loadEntry: ".memory_get_usage(true)." bytes\n";
+
+unset($splitLogEntries);
+
+echo "Memory usage after unsetting \$splitLogEntries: ".memory_get_usage(true)." bytes\n";
 
 // Explain each attribute in each service check
 

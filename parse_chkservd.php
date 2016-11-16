@@ -147,15 +147,27 @@ if (isset($service["monitoring_disabled"]) ||  isset($service["monitoring_enable
 		// -- Function Name : explainServiceCheckResult
 		// -- Params :	$check
 		// -- Purpose : Produces an array with human-readable information and color information about a particular service check. Does not do comparison.
-		function explainServiceCheckResult($check) {
+		function explainServiceCheckResult($check, $colorize) {
 
 		// $fmt array is "format"
-		$fmt["yellow"]	= exec("tput setaf 3");
-		$fmt["green"]	= exec("tput setaf 2");
-		$fmt["red"]	= exec("tput setaf 1");
-		$fmt["bold"]	= exec("tput bold");
-		$fmt["dim"]	= exec("tput dim");
-		$fmt["reset"]	= exec("tput sgr0");
+
+		if ($colorize) {
+                        $fmt["blue"]    = exec("tput setaf 4"); 
+			$fmt["yellow"]	= exec("tput setaf 3");
+			$fmt["green"]	= exec("tput setaf 2");
+			$fmt["red"]	= exec("tput setaf 1");
+			$fmt["bold"]	= exec("tput bold");
+			$fmt["dim"]	= exec("tput dim");
+			$fmt["reset"]	= exec("tput sgr0");
+		} else {
+                        $fmt["blue"]    = "";
+	                $fmt["yellow"]  = "";
+	                $fmt["green"]   = "";
+	                $fmt["red"]     = "";
+	                $fmt["bold"]    = "";
+	                $fmt["dim"]     = "";
+	                $fmt["reset"]   = "";
+		}
 
 		// Several categories of information:
 		// META: 	(blue, bold)	used for an unhandled attribute
@@ -531,10 +543,6 @@ if (isset($event["notification"])) {
 
 // Argument parsing and usage
 
-
-
-
-
 	$usage = <<<EOD
 Usage: ./parse_chkservd.php -f <filename> [<additional arguments>]
 
@@ -544,11 +552,11 @@ Required arguments
 Optional arguments
 -n	number of lines to read from the end of the file
 
-Verbosity (these are optional arguments)
+Verbosity and visual options (these are optional arguments)
 
 -vt	Show timeline event explanations
 -vp	Show when we reach each step in script execution.
-
+-vc	Colorise output regardless of whether it is entering a pipe to a file/second program or not.
 
 EOD;
 
@@ -573,7 +581,7 @@ if (trim(fgets(fopen($options["f"], "r"))) != "Service Check Started") {
                 exit("ERROR: This does not appear to be a chkservd log file, or does not start with 'Service Check Started'.\n");
         }
 
-// -v verbosity
+// -v verbosity/visual
 
 
 if (isset($options["v"])) {
@@ -603,6 +611,32 @@ if (isset($options["v"])) {
 
 	$options["v"]["t"] = (isset($options["v"]["t"]));
 	$options["v"]["p"] = (isset($options["v"]["p"]));
+	$options["v"]["c"] = (isset($options["v"]["c"]));
+
+	// Should we force colorization of output?
+	$options["colorize"] = $options["v"]["c"] ? $options["v"]["c"] : posix_isatty(STDOUT);
+
+	if ($options["colorize"]) {
+			$fmt["blue"]	= exec("tput setaf 4");
+                        $fmt["yellow"]  = exec("tput setaf 3");
+                        $fmt["green"]   = exec("tput setaf 2");
+                        $fmt["red"]     = exec("tput setaf 1");
+                        $fmt["bold"]    = exec("tput bold");
+                        $fmt["dim"]     = exec("tput dim");
+                        $fmt["reset"]   = exec("tput sgr0");
+                } else {
+			$fmt["blue"]	= "";
+                        $fmt["yellow"]  = "";
+                        $fmt["green"]   = "";
+                        $fmt["red"]     = "";
+                        $fmt["bold"]    = "";
+                        $fmt["dim"]     = "";
+                        $fmt["reset"]   = "";
+                }
+
+
+
+
 
 // -n number of lines to read (counting backwards from end of file)
 
@@ -675,7 +709,7 @@ foreach($parser->eventList as $point) {
 
 		foreach($point["services"] as $service) {
 
-			if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($service); }
+			if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($service, $options["colorize"]); }
 
 			// feed into timeline event generator function here
 
@@ -691,23 +725,25 @@ foreach($parser->eventList as $point) {
 
 // output timeline
 
-echo "Timeline: \n";
+echo $fmt["bold"] . "Timeline: {$fmt["reset"]}\n";
+
 foreach($parser->timeline as $timestamp => $timelineEntry) {
 
 	foreach($timelineEntry as $entry["service_name"] => $entry) {
 
 
 	                if (isset($entry["monitoring_enabled"])) {
-				echo strftime("%F %T %z", $timestamp) . " - Monitoring was enabled for {$entry["service_name"]}.\n";
+echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["bold"]}enabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
 		                }
 
         	        if (isset($entry["monitoring_disabled"])) {
 				if (isset($entry["status_changed_due_to_disabled_monitoring"])) {
-                                        echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} no longer marked down (monitoring was disabled). Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.\n";
+echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Service {$entry["service_name"]} no longer marked down (monitoring was disabled)." 
+." Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]}{$fmt["reset"]}\n";
 
 					}
 				else {
-					echo strftime("%F %T %z", $timestamp) . " - Monitoring was disabled for {$entry["service_name"]}.\n";
+echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} -{$fmt["dim"]} Monitoring was {$fmt["bold"]}disabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
 					}
 
 				}
@@ -716,11 +752,11 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 				switch ($entry["status"]) {
 
 					case "failed":
-						echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has gone down.\n";
+echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["bold"]}{$fmt["red"]}Service {$entry["service_name"]} has gone down.{$fmt["reset"]}\n";
 						break;
 
 					case "recovered":
-						echo strftime("%F %T %z", $timestamp) . " - Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.\n";
+echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["green"]}Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.{$fmt["reset"]}\n";
 						break;
 
 					default:

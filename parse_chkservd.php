@@ -434,15 +434,7 @@ if ($service is marked as recovered) {
 	if ($service was not previously down) do nothing; // probably at the beginning of the log excerpt read by the script
 	if ($service was previously marked as down) add to $timeline with $downtime_duration; update $systemState;
 }
-
-
 $timeline structure:
-
-Organized by ["timestamp"]
-
-$service has gone down
-$service has recovered (total downtime: $downtime_duration)
-
 
 Output will be something like this:
 
@@ -592,10 +584,11 @@ if (is_array($options["f"])) { exit("Error: You may only specify one file to rea
 
 if (!file_exists($options["f"])) { exit("Error: Could not open file {$options["f"]}\n"); } // if file does not exist
 
+/*
 if (trim(fgets(fopen($options["f"], "r"))) != "Service Check Started") {
                 exit("ERROR: This does not appear to be a chkservd log file, or does not start with 'Service Check Started'.\n");
         }
-
+*/
 // -v verbosity/visual
 
 
@@ -686,24 +679,19 @@ if (isset($options["v"])) {
 
 if ($options["v"]["p"]) { error_log("DEBUG: Loading log file...");  }
 
-//echo "Memory usage before preg_match_all: ".memory_get_usage(true)." bytes\n"; // TODO
-
-// This can sometimes cause out-of-memory issues with PHP. Might be ways to better optimize it.
-
 preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $logdata, $splitLogEntries);	// parse input data into unique elements with one raw chkservd entry per element
-//echo "Memory usage after preg_match_all: ".memory_get_usage(true)." bytes\n"; // TODO
 unset($logdata);
-//echo "Memory usage after unsetting \$logdata: ".memory_get_usage(true)." bytes\n"; // TODO
 
-// We need to throw away interrupted service checks (which abruptly end with "Service Check Interrupted\n")
 // TODO: we might end up with discrepancies if a service comes back up in an interrupted service check
 // TODO: we need to detect when a service status changes in an interrupted service check (when there's a notify: sent)
+
+
 foreach (current($splitLogEntries) as $index => $entry) {
 	if ($splitLogEntries[1][$index] == "Interrupted") { unset($splitLogEntries[0][$index]); unset($splitLogEntries[1][$index]); continue; } // throw away service checks that have the capturing group returned as "Interrupted"
 	}
-//echo "Memory usage before unsetting \$splitLogEntries[1] (used while removing interrupted service checks): ".memory_get_usage(true)." bytes\n"; // TODO
+
 unset($splitLogEntries[1]);
-//echo "Memory usage after unsetting \$splitLogEntries[1] (used while removing interrupted service checks): ".memory_get_usage(true)." bytes\n"; // TODO
+
 // Now we can go over each service check one-by-one.
 
 if ($options["v"]["p"]) { error_log("DEBUG: Extracting relevant events..."); } // DEBUGLINE
@@ -717,11 +705,7 @@ foreach (current($splitLogEntries) as $index => $entry) {
 
 }
 
-//echo "Memory usage after running each log entry into loadEntry: ".memory_get_usage(true)." bytes\n"; // TODO
-
 unset($splitLogEntries);
-
-//echo "Memory usage after unsetting \$splitLogEntries: ".memory_get_usage(true)." bytes\n"; // TODO
 
 // Explain each attribute in each service check
 
@@ -729,8 +713,6 @@ unset($splitLogEntries);
 if ($options["v"]["p"]) {
 error_log("DEBUG: Parsing events into timeline...");
 }
-
-//echo "Memory usage before parsing the eventList into the timeline: ".memory_get_usage(true)." bytes\n"; // TODO
 
 foreach($parser->eventList as $key=>$point) {
 	if (!empty($point["services"])) { // skip if nothing happened for this check
@@ -756,9 +738,7 @@ foreach($parser->eventList as $key=>$point) {
 
 }
 
-//echo "Memory usage after parsing the eventList into the timeline: ".memory_get_usage(true)." bytes\n"; // TODO
-unset($parser->eventList); 
-//echo "Memory usage after completely unsetting the eventList: ".memory_get_usage(true)." bytes\n"; // TODO
+unset($parser->eventList);
 
 
 // output timeline
@@ -776,7 +756,7 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 
         	        if (isset($entry["monitoring_disabled"])) {
 				if (isset($entry["status_changed_due_to_disabled_monitoring"])) {
-		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Monitoring was {$fmt["reset"]}{$fmt["red"]}disabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}, so it is no longer marked down. Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]}{$fmt["reset"]}\n";
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Monitoring was {$fmt["reset"]}{$fmt["red"]}disabled{$fmt["reset"]}{$fmt["dim"]}{$fmt["green"]} for {$entry["service_name"]}, so it is no longer marked down. Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]}{$fmt["reset"]}\n";
 
 					}
 				else {
@@ -820,3 +800,4 @@ if (isset($parser->systemState["down"]) && count($parser->systemState["down"]) >
 echo "\nServices currently marked down: none\n";
 
 }
+

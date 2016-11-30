@@ -696,6 +696,8 @@ unset($logdata);
 //echo "Memory usage after unsetting \$logdata: ".memory_get_usage(true)." bytes\n"; // TODO
 
 // We need to throw away interrupted service checks (which abruptly end with "Service Check Interrupted\n")
+// TODO: we might end up with discrepancies if a service comes back up in an interrupted service check
+// TODO: we need to detect when a service status changes in an interrupted service check (when there's a notify: sent)
 foreach (current($splitLogEntries) as $index => $entry) {
 	if ($splitLogEntries[1][$index] == "Interrupted") { unset($splitLogEntries[0][$index]); unset($splitLogEntries[1][$index]); continue; } // throw away service checks that have the capturing group returned as "Interrupted"
 	}
@@ -769,17 +771,16 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 
 
 	                if (isset($entry["monitoring_enabled"])) {
-		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["bold"]}enabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["reset"]}{$fmt["green"]}enabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
 		                }
 
         	        if (isset($entry["monitoring_disabled"])) {
 				if (isset($entry["status_changed_due_to_disabled_monitoring"])) {
-		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Service {$entry["service_name"]} no longer marked down (monitoring was disabled)." 
-." Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]}{$fmt["reset"]}\n";
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Monitoring was {$fmt["reset"]}{$fmt["red"]}disabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}, so it is no longer marked down. Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]}{$fmt["reset"]}\n";
 
 					}
 				else {
-		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} -{$fmt["dim"]} Monitoring was {$fmt["bold"]}disabled{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
+		echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} -{$fmt["dim"]} Monitoring was {$fmt["reset"]}{$fmt["red"]}disabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
 					}
 
 				}

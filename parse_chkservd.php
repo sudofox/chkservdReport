@@ -525,16 +525,19 @@ if (isset($event["notification"])) {
 
 function shutdown_handler() {
 
+	$memory_limit = ini_get("memory_limit");
+	ini_set("memory_limit", (preg_replace("/[^0-9]/","",ini_get("memory_limit")+5)."M")); // Allocate a small amount of additional memory so the shutdown function can complete. Works with +1M but I've set it to 5M just in case.
+	gc_collect_cycles();
 	$error = error_get_last();
 	if (preg_match("/Allowed memory size of/",$error["message"])) {
 		if (posix_isatty(STDOUT)) {
-			echo(exec("tput setaf 1")."Memory limit of ".ini_get("memory_limit")." has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).". exec("tput sgr0")."\n");
+			echo(exec("tput setaf 1")."Memory limit of ".$memory_limit." has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).". exec("tput sgr0")."\n");
 		} else {
-		echo("Memory limit of ".ini_get("memory_limit")." has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).\n");
+		echo("Memory limit of ".$memory_limit." has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).\n");
                 }
 	}
-}
 
+}
 register_shutdown_function("shutdown_handler");
 
 

@@ -383,8 +383,8 @@ array (
 					$serviceBreakdown["fail_count"] = $attributeData[1];
 
 				break;
-				case (preg_match("/\[service_name:([_\-A-Za-z0-9]{1,})\]/", $attribute) ? $attribute: !$attribute):
-					preg_match("/\[service_name:([_\-A-Za-z0-9]{1,})\]/", $attribute, $attributeData);
+				case (preg_match("/\[service_name:([_\-A-Za-z0-9\,]{1,})\]/", $attribute) ? $attribute: !$attribute):
+					preg_match("/\[service_name:([_\-A-Za-z0-9\,]{1,})\]/", $attribute, $attributeData);
 					$serviceBreakdown["service_name"] = $attributeData[1];
 				break;
 				case ((preg_match_all("/TCP\ Transaction\ Log.+?(?=Died)Died(?!=\[)/ms", $attribute) > 0) ? $attribute: !$attribute):

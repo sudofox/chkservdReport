@@ -526,7 +526,7 @@ if (isset($event["notification"])) {
 function shutdown_handler() {
 
 	$memory_limit = ini_get("memory_limit");
-	ini_set("memory_limit", (preg_replace("/[^0-9]/","",ini_get("memory_limit")+5)."M")); // Allocate a small amount of additional memory so the shutdown function can complete. Works with +1M but I've set it to 5M just in case.
+	ini_set("memory_limit", (preg_replace("/[^0-9]/","",ini_get("memory_limit")+3)."M")); // Allocate a small amount of additional memory so the shutdown function can complete. Works with +1M but I've set it to 3M just in case.
 	gc_collect_cycles();
 	$error = error_get_last();
 	if (preg_match("/Allowed memory size of/",$error["message"])) {

@@ -456,7 +456,7 @@ Output will be something like this:
 
 			if( isset($this->systemState["down"][$event["service_name"]])) {
 
-				$this->timeline[$timestamp][$event["service_name"]]["status_changed_due_to_disabled_monitoring"] = true; 
+				$this->timeline[$timestamp][$event["service_name"]]["status_changed_due_to_disabled_monitoring"] = true;
                                 $this->timeline[$timestamp][$event["service_name"]]["down_since"] = $this->systemState["down"][$event["service_name"]]["down_since"];
                                 $this->timeline[$timestamp][$event["service_name"]]["restart_attempts"] = $this->systemState["down"][$event["service_name"]]["restart_attempts"];
                                 $this->timeline[$timestamp][$event["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$event["service_name"]]["down_since"]);

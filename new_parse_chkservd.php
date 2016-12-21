@@ -281,6 +281,154 @@ return $serviceBreakdown;
 }	// end function
 
 
+                // -- Function Name : explainServiceCheckResult
+                // -- Params :  $check (a full entry from the parser's eventList), $colorize
+                // -- Purpose : Produces an array with human-readable information and color information about a particular service check. Does not do comparison.
+		function explainServiceCheckResult($check, $colorize) {
+
+		// $fmt array is "format"
+
+		if ($colorize) {
+                        $fmt["blue"]    = exec("tput setaf 4"); 
+			$fmt["yellow"]	= exec("tput setaf 3");
+			$fmt["green"]	= exec("tput setaf 2");
+			$fmt["red"]	= exec("tput setaf 1");
+			$fmt["bold"]	= exec("tput bold");
+			$fmt["dim"]	= exec("tput dim");
+			$fmt["reset"]	= exec("tput sgr0");
+		} else {
+                        $fmt["blue"]    = "";
+	                $fmt["yellow"]  = "";
+	                $fmt["green"]   = "";
+	                $fmt["red"]     = "";
+	                $fmt["bold"]    = "";
+	                $fmt["dim"]     = "";
+	                $fmt["reset"]   = "";
+		}
+
+		// Several categories of information:
+		// META: 	(blue, bold)	used for an unhandled attribute
+		// INFO: 	(white, bold)	TCP Transaction logs and stuff, or the service's name
+		// FAIL: 	(red)		Regarding something that contributes to the decision that a service should be marked as down by chkservd
+		// PASS:	(green)		Regarding something that contributes to the decision that a service should be marked as up by chkservd
+		// DOWN: 	(red, bold)	Service has been marked as down
+		// RECOVERED:	(green, bold)	Service has been marked as recovered
+		// UP:		(green, bold)	Service has conditionally passed the service check. (e.g. socket failure threshold not exceeded)
+		// ACTION:	(yellow, bold)	Action has been taken (email notification sent, service restart attempted, etc)
+
+		// We can determine whether ChkServd.pm determined a service as down by checking the notification attribute, as that logic is one with the "should we notify?/notification type" logic
+
+	if ($check["interrupted"]) {
+		echo ($fmt["bold"] . $fmt["red"] . "This service check was interrupted before it was able to complete." . $fmt["reset"] . "\n");
+	}
+
+	foreach($check["services"] as $service) {
+
+                echo($fmt["bold"] . "INFO: Service name: {$service["service_name"]}{$fmt["reset"]}\n");
+
+
+		// Is the service failed, recovered, or yet to be determined (in case of tests involving multiple required checks, such as socket_failure_threshold)?
+		$serviceFailureStatus = (isset($service["notification"])) ? $service["notification"] : "none";
+
+		switch($serviceFailureStatus) {
+
+			case "failed":
+				echo( $fmt["bold"] . $fmt["red"] . "DOWN:" . $fmt["reset"] . $fmt["red"] ." The service {$fmt["bold"]}failed{$fmt["reset"]}{$fmt["red"]} the service check and was marked as down." . $fmt["reset"] . "\n");
+				break;
+			case "recovered";
+				echo( $fmt["bold"] . $fmt["green"] . "RECOVERED:" . $fmt["reset"] . $fmt["green"] ." The service {$fmt["bold"]}passed{$fmt["reset"]}{$fmt["green"]} the service check and was marked as having recovered from the previous failure." . $fmt["reset"] . "\n");
+				break;
+			default:
+			case "none":
+				echo( $fmt["bold"] . $fmt["green"] . "UP:" . $fmt["reset"] . $fmt["green"] ." The service {$fmt["bold"]}conditionally passed{$fmt["reset"]}{$fmt["green"]} the service check, and has not been marked as down." . $fmt["reset"] . "\n");
+				break;
+
+			}
+
+
+		foreach($service as $attribute => $value) {
+
+			switch($attribute) {
+
+			case "fail_count":
+				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed ".$fmt["bold"]. $value . $fmt["reset"]. " consecutive service check(s).". "\n");
+				break;
+                        case "check_command": {
+                                switch ($value) {
+                                        case "other": {
+                                                echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The check_command test did not produce a decisive result (status: \"other\")." . $fmt["reset"]. "\n");
+                                                break; }
+                                        case "down": {
+                                                echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the check_command test." . $fmt["reset"]. "\n");
+                                                break; }
+                                        case "unknown": {
+                                                echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The check_command test did not produce a decisive result (status: \"unknown\")." . $fmt["reset"]. "\n");
+                                                break; }
+                                        case "up": {
+                                                echo($fmt["green"]. "PASS:" .$fmt["reset"] . " The service has passed the check_command test." . $fmt["reset"]. "\n");
+                                                break; }
+                                        }
+                                break; }
+
+			case "socket_connect": {
+				switch ($value) {
+					case "other": {
+						echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The socket_connect test did not produce a decisive result (status: \"other\")." . $fmt["reset"]. "\n");
+						break; }
+					case "down": {
+						echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the socket_connect test." . $fmt["reset"]. "\n");
+						break; }
+					case "unknown": {
+						echo($fmt["bold"] . "INFO:" .$fmt["reset"] . " The socket_connect test did not produce a decisive result (status: \"unknown\")." . $fmt["reset"]. "\n");
+						break; }
+					case "up": {
+						echo($fmt["green"]. "PASS:" .$fmt["reset"] . " The service has passed the socket_connect test." . $fmt["reset"]. "\n");
+						break; }
+					}
+				break; }
+
+			case "notification":
+				$statusColor = ($value == "recovered") ? $fmt["green"] : $fmt["red"];
+				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A notification has been sent regarding the service status (" . $fmt["bold"] . $statusColor . $value . $fmt["reset"] . $fmt["yellow"] .")." .$fmt["reset"]. "\n");
+				break;
+
+			case "restart_attempted":
+				// TODO: color-code the $value
+				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A service restart has been attempted." . $fmt["reset"] . "\n");
+				break;
+
+			case "socket_failure_threshold":
+
+				if ($value < 1) {
+
+	                                echo($fmt["green"] . "PASS:" . $fmt["reset"] . " The service failed the socket_connect check, but has not exceeded the socket failure threshold." . $fmt["reset"] . "\n");
+				} elseif ($value >=1) {
+
+					echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed the socket_connect check and has exceeded the socket failure threshold." . $fmt["reset"]. "\n");
+				}
+				break;
+
+			case "tcp_transaction_log":
+				echo( $fmt["bold"] . "INFO:" .$fmt["reset"] . " The service check produced a TCP Transaction Log:\n" . $fmt["dim"] . $value . $fmt["reset"] . "\n");
+				break;
+
+			case "http_service_auth":
+				// this line is logged immediately _before_ Chkservd sends a request to the relevant service (GET /.__cpanel__service__check__./serviceauth?sendkey= with a key at the end)
+				// therefore, it does not indicate whether that was successful or not
+				echo ( $fmt["bold"] . "INFO:" . $fmt["reset"] . " An HTTP request was made to the service to test service authentication.\n");
+				break;
+			case "socket_service_auth":
+				echo ( $fmt["bold"] . "INFO:" . $fmt["reset"] . " A TCP-based (socket) request was made to the service to test service authentication.\n");
+				break;
+			default:
+				echo($fmt["red"] . "META: The attribute $attribute has no explanation." . $fmt["reset"] ."\n");
+				break;
+
+				}
+
+			}
+		} // end iteration over services
+	}
 
 
 
@@ -445,9 +593,10 @@ foreach ($splitLogEntries[0] as $index => $entry) {
 	$check = $parser->loadEntry($entry);
 	if ($check === false) { continue; } // loadEntry returning false means that the check must be thrown out.
 	$parser->eventList[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"], $index);
-	$parser->eventList[$check["timestamp"]]["interrupted"] = (isset($this->interruptedChecks[$index]) && $this->interruptedChecks[$index]);
+	$parser->eventList[$check["timestamp"]]["interrupted"] = (isset($parser->interruptedChecks[$index]) && $parser->interruptedChecks[$index]);
 	$parser->eventList[$check["timestamp"]]["timestamp"] = $check["timestamp"];
 	$parser->eventList[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T %z", $check["timestamp"]);
+	$parser->eventList[$check["timestamp"]]["iterator"] = $index; // TODO: in case we need to reference the original order of the checks later
 }
 
 unset($splitLogEntries);
@@ -462,3 +611,34 @@ unset($splitLogEntries);
 
 
 var_export($parser->eventList);
+
+if ($options["v"]["p"]) { error_log("DEBUG: Parsing events into timeline..."); } //TODO: Debug
+
+foreach($parser->eventList as $key=>$point) {
+	// TODO: We may want to keep an empty service check if it comes _after_ an interrupted service check. We aren't currently doing this.
+	// TODO: see http://stackoverflow.com/a/4792770 to reference previous array element
+
+	if (!empty($point["services"])  && !$point["interrupted"]) {
+		// TODO: might want to move this following output to after processing
+                if ($options["v"]["t"]) {  echo($fmt["bold"] . $fmt["blue"] . "Service check at {$point["formatted_timestamp"]}:" . $fmt["reset"] . "\n"); }
+
+		// TODO: old version of script took each service into parseIntoTimeline - we now need to pass the entire service check to parseIntoTimeline so we can handle interrupted checks
+		// TODO: same changes should be applied to explainServiceCheckResult so we can mention in the output that the check was interrupted
+
+		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($point, $options["colorize"]); echo "\n"; }
+
+// 		$parser->parseIntoTimeline($point);
+
+		// TODO: Old version of script unset check here for memory mgmt purposes - we may need to reference previous checks, so this has been removed for now.
+
+	} // TODO: end if
+
+}  // TODO: end foreach
+
+unset($parser->eventList); // TODO: No longer needed?
+
+
+
+
+
+

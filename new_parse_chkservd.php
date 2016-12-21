@@ -65,13 +65,15 @@ class chkservdParser
 
 		$interrupted = false;
 
-		if (strpos($entry, "Service Check Interupted") !== false) {
+		if (strpos($entry, "Service Check Interupted") != false) {
+			$interrupted = true;
+
 			if ($this->firstCheck) {
 				return false; // First service check was interrupted. Ignore this one and count the next as the real first service check.
-			} else {
-				$interrupted = true;
 			}
 		}
+
+		echo("DEBUG: interrupted equals " . (($interrupted) ? "true" : "false") ."\n"); // TODO: debug
 
 		// get timestamp of service check
 		preg_match_all("/(?<=\[)[0-9]{4}\-.+?(?=\] Service\ check)/", $entry, $entry_timestamp);
@@ -114,7 +116,7 @@ class chkservdParser
 
 		// Detect if service monitoring has been disabled for a service
 
-		if (!$interrupted) {
+		if ($interrupted === false) {
 
 			if ($this->firstCheck) {
 				$this->firstCheck = false;
@@ -134,6 +136,9 @@ class chkservdParser
 			}
 			$this->monitoredServices = $servicesList;
 		}
+
+else { error_log("DEBUG: service check was interrupted, so we didn't add the monitoring_enabled or monitoring_disabled for services"); } // TODO: Debug
+
 	$entryData["timestamp"] = $entry_timestamp;
 	$entryData["interrupted"] = $interrupted;
 	return $entryData;
@@ -318,6 +323,8 @@ return $serviceBreakdown;
 
 		// We can determine whether ChkServd.pm determined a service as down by checking the notification attribute, as that logic is one with the "should we notify?/notification type" logic
 
+	echo($fmt["bold"] . $fmt["blue"] . "Service check at {$check["formatted_timestamp"]}:" . $fmt["reset"] . "\n");
+
 	if ($check["interrupted"]) {
 		echo ($fmt["bold"] . $fmt["red"] . "This service check was interrupted before it was able to complete." . $fmt["reset"] . "\n");
 	}
@@ -349,6 +356,14 @@ return $serviceBreakdown;
 		foreach($service as $attribute => $value) {
 
 			switch($attribute) {
+			case "service_name":
+				break; // not displayed
+			case "monitoring_enabled":
+				echo ($fmt["bold"] . "INFO:" . $fmt["reset"] . " Monitoring was enabled for the service prior to this service check.\n");
+				break;
+			case "monitoring_disabled":
+				echo ($fmt["bold"] . "INFO:" . $fmt["reset"] . " Monitoring was disabled for the service prior to this service check.\n");
+				break;
 
 			case "fail_count":
 				echo($fmt["red"] . "FAIL:" .$fmt["reset"] . " The service has failed ".$fmt["bold"]. $value . $fmt["reset"]. " consecutive service check(s).". "\n");
@@ -425,8 +440,10 @@ return $serviceBreakdown;
 				break;
 
 				}
+			} // end iteration over single service
 
-			}
+			echo "\n";
+
 		} // end iteration over services
 	}
 
@@ -608,22 +625,17 @@ unset($splitLogEntries);
 // TODO: Unsure whether the data within the interrupted check is usable or not, we might be able to update the systemState partially from what's
 // TODO: there, and fill in the rest from the next *completed* service check
 
-
-
-var_export($parser->eventList);
-
 if ($options["v"]["p"]) { error_log("DEBUG: Parsing events into timeline..."); } //TODO: Debug
 
 foreach($parser->eventList as $key=>$point) {
 	// TODO: We may want to keep an empty service check if it comes _after_ an interrupted service check. We aren't currently doing this.
 	// TODO: see http://stackoverflow.com/a/4792770 to reference previous array element
 
-	if (!empty($point["services"])  && !$point["interrupted"]) {
-		// TODO: might want to move this following output to after processing
-                if ($options["v"]["t"]) {  echo($fmt["bold"] . $fmt["blue"] . "Service check at {$point["formatted_timestamp"]}:" . $fmt["reset"] . "\n"); }
+	if (!(empty($point["services"]) && !$point["interrupted"])) {
 
 		// TODO: old version of script took each service into parseIntoTimeline - we now need to pass the entire service check to parseIntoTimeline so we can handle interrupted checks
 		// TODO: same changes should be applied to explainServiceCheckResult so we can mention in the output that the check was interrupted
+
 
 		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($point, $options["colorize"]); echo "\n"; }
 

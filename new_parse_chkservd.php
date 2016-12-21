@@ -451,18 +451,22 @@ return $serviceBreakdown;
 
 
 	function parseIntoTimeline($check) {
-		// TODO: Skeleton function, does nothing yet
+
+		// TODO: Regardless of interrupted service checks, we should still compare systemState with what we have
+		// TODO: also need to figure out a way to get service state for "up" services not included in what was passed to this function
+		// TODO: with the tradeoff of increased memory usage, we can possibly include the services marked as up instead of filtering them out,
+
+		// TODO: May be better to assume that a service within $parser->servicesList that is not present in here is by default "up", unless the check was interrupted.
+
 		if ($check["interrupted"]) {
 			// TODO: check was interrupted
-			// TODO: Regardless of interrupted service checks, we should still compare systemState with what we have
-			// TODO: also need to figure out a way to get service state for "up" services not included in what was passed to this function
 		}
 
 		// Monitoring changes
 
 	foreach($check["services"] as $service) {
 		        if (isset($service["monitoring_enabled"])) {
-				$this->timeline[$timestamp][service["service_name"]]["monitoring_enabled"] = true;
+				$this->timeline[$timestamp][$service["service_name"]]["monitoring_enabled"] = true;
 		        }
 
 			if (isset($service["monitoring_disabled"])) {
@@ -474,7 +478,7 @@ return $serviceBreakdown;
 					$this->timeline[$timestamp][$service["service_name"]]["down_since"] = $this->systemState["down"][$service["service_name"]]["down_since"];
 					$this->timeline[$timestamp][$service["service_name"]]["restart_attempts"] = $this->systemState["down"][$service["service_name"]]["restart_attempts"];
 					$this->timeline[$timestamp][$service["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$service["service_name"]]["down_since"]);
-					unset($this->systemState["down"][$servie["service_name"]]); // Service is no longer monitored, so we should not mark it as down any longer.
+					unset($this->systemState["down"][$service["service_name"]]); // Service is no longer monitored, so we should not mark it as down any longer.
 				}
 
 			}

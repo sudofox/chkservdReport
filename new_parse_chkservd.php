@@ -48,7 +48,7 @@ class chkservdParser
 	// -- Params : $input
 	// -- Purpose : parses all data out of a single chkservd log entry.
 	// -- Currently returns false if it is presented with an invalid service check. otherwise, returns entryData array
-	function loadEntry($input) {
+	function loadEntry($input, $index) {
 
 		// Should be given only one chkservd log section, will chop off rest if more is given.
 		// Pull out our Chkservd log block entry...pull first one if more than one are provided for some reason
@@ -64,16 +64,14 @@ class chkservdParser
 		// If our VERY FIRST check is an interrupted one, then we will throw it out. We need a full services list to use, which an interrupted check cannot always provide.
 
 		$interrupted = false;
-
-		if (strpos($entry, "Service Check Interupted") != false) {
+		if (isset($this->interruptedChecks[$index]) && $this->interruptedChecks[$index]) {
+//		if (strpos($entry, "Service Check Interupted") !== false) {
 			$interrupted = true;
-
 			if ($this->firstCheck) {
 				return false; // First service check was interrupted. Ignore this one and count the next as the real first service check.
 			}
 		}
 
-		echo("DEBUG: interrupted equals " . (($interrupted) ? "true" : "false") ."\n"); // TODO: debug
 
 		// get timestamp of service check
 		preg_match_all("/(?<=\[)[0-9]{4}\-.+?(?=\] Service\ check)/", $entry, $entry_timestamp);
@@ -116,7 +114,7 @@ class chkservdParser
 
 		// Detect if service monitoring has been disabled for a service
 
-		if ($interrupted === false) {
+		if (!$interrupted) {
 
 			if ($this->firstCheck) {
 				$this->firstCheck = false;
@@ -137,7 +135,6 @@ class chkservdParser
 			$this->monitoredServices = $servicesList;
 		}
 
-else { error_log("DEBUG: service check was interrupted, so we didn't add the monitoring_enabled or monitoring_disabled for services"); } // TODO: Debug
 
 	$entryData["timestamp"] = $entry_timestamp;
 	$entryData["interrupted"] = $interrupted;
@@ -294,7 +291,7 @@ return $serviceBreakdown;
 		// $fmt array is "format"
 
 		if ($colorize) {
-                        $fmt["blue"]    = exec("tput setaf 4"); 
+                        $fmt["blue"]    = exec("tput setaf 4");
 			$fmt["yellow"]	= exec("tput setaf 3");
 			$fmt["green"]	= exec("tput setaf 2");
 			$fmt["red"]	= exec("tput setaf 1");
@@ -445,6 +442,20 @@ return $serviceBreakdown;
 			echo "\n";
 
 		} // end iteration over services
+	} // end function
+
+
+	// -- Function Name : parseIntoTimeline
+	// -- Params :  $check (a full entry from the parser's eventList)
+	// -- Purpose : processes each service check into the final timeline, and accounts for inconsistencies between service checks by comparing systemState with what's in the check
+
+
+	function parseIntoTimeline($check) {
+		// TODO: Skeleton function, does nothing yet
+		if ($check["interrupted"]) {
+			// check was interrupted
+		}
+
 	}
 
 
@@ -607,7 +618,7 @@ unset($splitLogEntries[1]);
 
 // This is where the parsing of each check starts
 foreach ($splitLogEntries[0] as $index => $entry) {
-	$check = $parser->loadEntry($entry);
+	$check = $parser->loadEntry($entry, $index);
 	if ($check === false) { continue; } // loadEntry returning false means that the check must be thrown out.
 	$parser->eventList[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"], $index);
 	$parser->eventList[$check["timestamp"]]["interrupted"] = (isset($parser->interruptedChecks[$index]) && $parser->interruptedChecks[$index]);

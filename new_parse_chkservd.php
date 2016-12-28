@@ -19,10 +19,10 @@ function shutdown_handler()
 	$error = error_get_last();
 	if (preg_match("/Allowed memory size of/", $error["message"])) {
 		if (posix_isatty(STDOUT)) {
-			echo (exec("tput setaf 1") . "Memory limit of $memory_limit has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M)." . exec("tput sgr0") . "\n");
+			echo (exec("tput setaf 1; tput bold") . "Memory limit of $memory_limit has been reached before log parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M)." . exec("tput sgr0") . "\n");
 		}
 		else {
-			echo ("Memory limit of $memory_limit has been reached before parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).\n");
+			echo ("Memory limit of $memory_limit has been reached before log parsing could be completed. Try setting the memory_limit manually with the -m flag (e.g. -m128M).\n");
 		}
 	}
 }
@@ -183,7 +183,7 @@ class chkservdParser
 
 	// -- Function Name : analyzeServiceCheck
 	// -- Params : $checkOutput
-	// -- Purpose : Pull information from a service check line
+	// -- Purpose : Pull information from a service check entry
 	function analyzeServiceCheck($serviceCheck) {
 
 	$serviceBreakdown = array();
@@ -278,8 +278,8 @@ class chkservdParser
 	}
 
 $serviceBreakdown = array("service_name" => $serviceBreakdown["service_name"]) + $serviceBreakdown; // shift the service_name attribute to the beginning of the array
-
 return $serviceBreakdown;
+
 }	// end function
 
 
@@ -460,84 +460,78 @@ return $serviceBreakdown;
 	$timestamp = $check["timestamp"];
 
 		if ($check["interrupted"]) { // TODO: check was interrupted - might not contain service list
-
+			$this->timeline[$timestamp]["interrupted"] = true;
 
 		}
 
 		// Monitoring changes
-
-	foreach($check["services"] as $service) {
+	if (!$check["interrupted"]) {
+		foreach($check["services"] as $service) {
 		        if (isset($service["monitoring_enabled"])) {
-				$this->timeline[$timestamp][$service["service_name"]]["monitoring_enabled"] = true;
-		        }
+					$this->timeline[$timestamp]["services"][$service["service_name"]]["monitoring_enabled"] = true;
+		        	}
 
-			if (isset($service["monitoring_disabled"])) {
+				if (isset($service["monitoring_disabled"])) {
 
-				$this->timeline[$timestamp][$service["service_name"]]["monitoring_disabled"] = true;
+					$this->timeline[$timestamp]["services"][$service["service_name"]]["monitoring_disabled"] = true;
 
-				if( isset($this->systemState["down"][$service["service_name"]])) {
-					$this->timeline[$timestamp][$service["service_name"]]["status_changed_due_to_disabled_monitoring"] = true;
-					$this->timeline[$timestamp][$service["service_name"]]["down_since"] = $this->systemState["down"][$service["service_name"]]["down_since"];
-					$this->timeline[$timestamp][$service["service_name"]]["restart_attempts"] = $this->systemState["down"][$service["service_name"]]["restart_attempts"];
-					$this->timeline[$timestamp][$service["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$service["service_name"]]["down_since"]);
-					unset($this->systemState["down"][$service["service_name"]]); // Service is no longer monitored, so we should not mark it as down any longer.
+					if( isset($this->systemState["down"][$service["service_name"]])) {
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["status_changed_due_to_disabled_monitoring"] = true;
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["down_since"] = $this->systemState["down"][$service["service_name"]]["down_since"];
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["restart_attempts"] = $this->systemState["down"][$service["service_name"]]["restart_attempts"];
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$service["service_name"]]["down_since"]);
+						unset($this->systemState["down"][$service["service_name"]]); // Service is no longer monitored, so we should not mark it as down any longer.
+					}
+
 				}
 
-			}
-
-	if (isset($service["notification"])) {
-		switch ($service["notification"]) {
-			case "failed":
-				if( isset($this->systemState["down"][$service["service_name"]])) {
-					if ($service["restart_attempted"]) {
-						$this->systemState["down"][$service["service_name"]]["restart_attempts"]++;
+		if (isset($service["notification"])) {
+			switch ($service["notification"]) {
+				case "failed":
+					if( isset($this->systemState["down"][$service["service_name"]])) {
+						if ($service["restart_attempted"]) {
+							$this->systemState["down"][$service["service_name"]]["restart_attempts"]++;
+						}
+						return;
+					}
+					else {
+						$this->systemState["down"][$service["service_name"]]["down_since"] = $timestamp;
+						$this->systemState["down"][$service["service_name"]]["restart_attempts"] = 1;
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["status"] = "failed";
 					}
 					return;
-				}
-				else {
-					$this->systemState["down"][$service["service_name"]]["down_since"] = $timestamp;
-					$this->systemState["down"][$service["service_name"]]["restart_attempts"] = 1;
-					$this->timeline[$timestamp][$service["service_name"]]["status"] = "failed";
-				}
-				return;
-				break;
+					break;
 
-			case "recovered":
-				if (!isset($this->systemState["down"][$service["service_name"]])) {
-					return; // ignore this - input data does not include when the service first went down
-				}
+				case "recovered":
+					if (!isset($this->systemState["down"][$service["service_name"]])) {
+						return; // ignore this - input data does not include when the service first went down
+					}
 
-				elseif (isset($this->systemState["down"][$service["service_name"]])) {
+					elseif (isset($this->systemState["down"][$service["service_name"]])) {
 
-					$this->timeline[$timestamp][$service["service_name"]]["status"] = "recovered";
-					$this->timeline[$timestamp][$service["service_name"]]["down_since"] = $this->systemState["down"][$service["service_name"]]["down_since"];
-					$this->timeline[$timestamp][$service["service_name"]]["restart_attempts"] = $this->systemState["down"][$service["service_name"]]["restart_attempts"];
-					$this->timeline[$timestamp][$service["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$service["service_name"]]["down_since"]);
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["status"] = "recovered";
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["down_since"] = $this->systemState["down"][$service["service_name"]]["down_since"];
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["restart_attempts"] = $this->systemState["down"][$service["service_name"]]["restart_attempts"];
+						$this->timeline[$timestamp]["services"][$service["service_name"]]["downtime"] = ($timestamp - $this->systemState["down"][$service["service_name"]]["down_since"]);
 
-					unset($this->systemState["down"][$service["service_name"]]);
+						unset($this->systemState["down"][$service["service_name"]]);
 
-                	                return;
-                                }
+                		                return;
+        	                        }
 
-        	                break;
-	                default:
-        	                return;
-                	        break;
+        		                break;
+		                default:
+        		                return;
+        	        	        break;
 
-			} // end switch
-		} else { // If $service["notification"] is not set
-
-		}
-
-	} // end foreach
-
+				} // end switch
+			} // end if(isset)
+		} // end foreach
+	} // end 'if check not interrupted'
 } // End function
 
+} // end class
 
-
-}
-
-// End main class
 // Usage
 
 $usage = <<<EOD
@@ -735,7 +729,6 @@ foreach($parser->eventList as $key=>$point) {
 
 }  // TODO: end foreach
 
-//		var_export($parser->timeline);
 
 unset($parser->eventList); // TODO: No longer needed?
 
@@ -745,7 +738,12 @@ echo $fmt["bold"] . "Timeline: {$fmt["reset"]}\n";
 
 foreach($parser->timeline as $timestamp => $timelineEntry) {
 
-	foreach($timelineEntry as $entry["service_name"] => $entry) {
+
+	if (isset($timelineEntry["interrupted"]) && $timelineEntry["interrupted"] == true) {
+		echo $fmt["bold"] .strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["red"]}The service check was interrupted before it could complete.{$fmt["reset"]}\n";
+	} else {
+
+	foreach($timelineEntry["services"] as $entry["service_name"] => $entry) {
 
                 if (isset($entry["monitoring_enabled"])) {
 			echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["reset"]}{$fmt["green"]}enabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
@@ -773,6 +771,7 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 					}
 				}
 		}
+	}
 
 }
 

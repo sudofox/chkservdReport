@@ -459,14 +459,13 @@ return $serviceBreakdown;
 		// TODO: May be better to assume that a service within $parser->servicesList that is not present in here is by default "up", unless the check was interrupted.
 	$timestamp = $check["timestamp"];
 
-		if ($check["interrupted"]) { // TODO: check was interrupted - might not contain service list
-			$this->timeline[$timestamp]["interrupted"] = true;
+	$this->timeline[$timestamp]["interrupted"] = $check["interrupted"];
 
-		}
-
-		// Monitoring changes
-	if (!$check["interrupted"]) {
+	// TODO: We are somehow losing all but the first entry in the check in the foreach, are we exiting the foreach prematurely?
+	if (!$this->timeline[$timestamp]["interrupted"]) {
 		foreach($check["services"] as $service) {
+
+			// Monitoring changes
 		        if (isset($service["monitoring_enabled"])) {
 					$this->timeline[$timestamp]["services"][$service["service_name"]]["monitoring_enabled"] = true;
 		        	}
@@ -488,23 +487,23 @@ return $serviceBreakdown;
 		if (isset($service["notification"])) {
 			switch ($service["notification"]) {
 				case "failed":
-					if( isset($this->systemState["down"][$service["service_name"]])) {
+					if( isset($this->systemState["down"][$service["service_name"]])) { // if service already marked down
 						if ($service["restart_attempted"]) {
 							$this->systemState["down"][$service["service_name"]]["restart_attempts"]++;
 						}
-						return;
+						continue;
 					}
-					else {
+					else { // mark as down
 						$this->systemState["down"][$service["service_name"]]["down_since"] = $timestamp;
 						$this->systemState["down"][$service["service_name"]]["restart_attempts"] = 1;
 						$this->timeline[$timestamp]["services"][$service["service_name"]]["status"] = "failed";
 					}
-					return;
+						continue;
 					break;
 
 				case "recovered":
 					if (!isset($this->systemState["down"][$service["service_name"]])) {
-						return; // ignore this - input data does not include when the service first went down
+						continue; // ignore this - input data does not include when the service first went down
 					}
 
 					elseif (isset($this->systemState["down"][$service["service_name"]])) {
@@ -516,12 +515,12 @@ return $serviceBreakdown;
 
 						unset($this->systemState["down"][$service["service_name"]]);
 
-                		                return;
+                		                continue;
         	                        }
 
         		                break;
 		                default:
-        		                return;
+        		                continue;
         	        	        break;
 
 				} // end switch
@@ -691,6 +690,7 @@ foreach ($splitLogEntries[0] as $index => $entry) {
 	if ($check === false) { continue; } // loadEntry returning false means that the check must be thrown out.
 	if(isset($check["services"])) { // TODO: An interrupted service check doesn't have this
 		$parser->eventList[$check["timestamp"]]["services"]	=	$parser->extractRelevantEvents($check["services"], $index);
+
 	}
 
 	$parser->eventList[$check["timestamp"]]["interrupted"]		=	(isset($parser->interruptedChecks[$index]) && $parser->interruptedChecks[$index]);
@@ -721,14 +721,12 @@ foreach($parser->eventList as $key=>$point) {
 
 
 		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($point, $options["colorize"]); echo "\n"; }
-
  		$parser->parseIntoTimeline($point);
 		// TODO: Old version of script unset check here for memory mgmt purposes - we may need to reference previous checks, so this has been removed for now.
 
 	} // TODO: end if
 
 }  // TODO: end foreach
-
 
 unset($parser->eventList); // TODO: No longer needed?
 

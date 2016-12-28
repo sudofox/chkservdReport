@@ -457,9 +457,11 @@ return $serviceBreakdown;
 		// TODO: with the tradeoff of increased memory usage, we can possibly include the services marked as up instead of filtering them out,
 
 		// TODO: May be better to assume that a service within $parser->servicesList that is not present in here is by default "up", unless the check was interrupted.
+	$timestamp = $check["timestamp"];
 
-		if ($check["interrupted"]) {
-			// TODO: check was interrupted
+		if ($check["interrupted"]) { // TODO: check was interrupted - might not contain service list
+
+
 		}
 
 		// Monitoring changes
@@ -693,11 +695,14 @@ unset($splitLogEntries[1]);
 foreach ($splitLogEntries[0] as $index => $entry) {
 	$check = $parser->loadEntry($entry, $index);
 	if ($check === false) { continue; } // loadEntry returning false means that the check must be thrown out.
-	$parser->eventList[$check["timestamp"]]["services"] = $parser->extractRelevantEvents($check["services"], $index);
-	$parser->eventList[$check["timestamp"]]["interrupted"] = (isset($parser->interruptedChecks[$index]) && $parser->interruptedChecks[$index]);
-	$parser->eventList[$check["timestamp"]]["timestamp"] = $check["timestamp"];
-	$parser->eventList[$check["timestamp"]]["formatted_timestamp"] = strftime("%F %T %z", $check["timestamp"]);
-	$parser->eventList[$check["timestamp"]]["iterator"] = $index; // TODO: in case we need to reference the original order of the checks later
+	if(isset($check["services"])) { // TODO: An interrupted service check doesn't have this
+		$parser->eventList[$check["timestamp"]]["services"]	=	$parser->extractRelevantEvents($check["services"], $index);
+	}
+
+	$parser->eventList[$check["timestamp"]]["interrupted"]		=	(isset($parser->interruptedChecks[$index]) && $parser->interruptedChecks[$index]);
+	$parser->eventList[$check["timestamp"]]["timestamp"]		=	$check["timestamp"];
+	$parser->eventList[$check["timestamp"]]["formatted_timestamp"]	=	strftime("%F %T %z", $check["timestamp"]);
+	$parser->eventList[$check["timestamp"]]["iterator"]		=	$index; // TODO: in case we need to reference the original order of the checks later
 }
 
 unset($splitLogEntries);
@@ -723,18 +728,64 @@ foreach($parser->eventList as $key=>$point) {
 
 		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($point, $options["colorize"]); echo "\n"; }
 
-// 		$parser->parseIntoTimeline($point);
-
+ 		$parser->parseIntoTimeline($point);
 		// TODO: Old version of script unset check here for memory mgmt purposes - we may need to reference previous checks, so this has been removed for now.
 
 	} // TODO: end if
 
 }  // TODO: end foreach
 
+//		var_export($parser->timeline);
+
 unset($parser->eventList); // TODO: No longer needed?
 
+// Timeline Output
+
+echo $fmt["bold"] . "Timeline: {$fmt["reset"]}\n";
+
+foreach($parser->timeline as $timestamp => $timelineEntry) {
+
+	foreach($timelineEntry as $entry["service_name"] => $entry) {
+
+                if (isset($entry["monitoring_enabled"])) {
+			echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["reset"]}{$fmt["green"]}enabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
+		}
+
+		if (isset($entry["monitoring_disabled"])) {
+			if (isset($entry["status_changed_due_to_disabled_monitoring"])) {
+				echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Monitoring was {$fmt["reset"]}{$fmt["red"]}disabled{$fmt["reset"]}{$fmt["dim"]}{$fmt["green"]} for {$entry["service_name"]}, so it is no longer marked down. Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]}{$fmt["reset"]}\n";
+			}
+			else {
+				echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} -{$fmt["dim"]} Monitoring was {$fmt["reset"]}{$fmt["red"]}disabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
+			}
+		}
+
+		if(isset($entry["status"])) {
+			switch ($entry["status"]) {
+					case "failed":
+						echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["bold"]}{$fmt["red"]}Service {$entry["service_name"]} has gone down.{$fmt["reset"]}\n";
+					break;
+					case "recovered":
+						echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["green"]}Service {$entry["service_name"]} has recovered. Downtime: {$entry["downtime"]} seconds. Restart attempts: {$entry["restart_attempts"]}.{$fmt["reset"]}\n";
+					break;
+					default:
+						break;
+					}
+				}
+		}
+
+}
 
 
+// output system state for currently-down services
 
+if (isset($parser->systemState["down"]) && count($parser->systemState["down"]) > 0 ) {
+	echo "\nServices currently marked down:\n";
 
+	foreach($parser->systemState["down"] as $name=>$service) {
+		echo $name.": \t down since ".strftime("%F %T %z", $service["down_since"]) .", {$service["restart_attempts"]} restart attempt(s).\n";
+		}
+} else {
+	echo "\nServices currently marked down: none\n";
+}
 

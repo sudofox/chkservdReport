@@ -475,7 +475,7 @@ if (isset($event["notification"])) {
 				if ($event["restart_attempted"]) {
 					$this->systemState["down"][$event["service_name"]]["restart_attempts"]++;
 				}
-				return;
+				continue;
 			}
 			else {
 				$this->systemState["down"][$event["service_name"]]["down_since"] = $timestamp;
@@ -483,11 +483,11 @@ if (isset($event["notification"])) {
 
 				$this->timeline[$timestamp][$event["service_name"]]["status"] = "failed";
 				}
-			return;
+			continue;
 			break;
 		case "recovered":
 			if (!isset($this->systemState["down"][$event["service_name"]])) {
-				return; // ignore this - input data does not include when the service first went down
+				continue; // ignore this - input data does not include when the service first went down
 			 }
 
 			elseif (isset($this->systemState["down"][$event["service_name"]])) {
@@ -499,11 +499,11 @@ if (isset($event["notification"])) {
 
 				unset($this->systemState["down"][$event["service_name"]]);
 
-				return;
+				continue;
 				}
 			break;
 		default:
-			return;
+			continue;
 			break;
 
 		}

@@ -8,3 +8,4 @@ To Do:
 
 - Fix inconstencies caused by of interrupted service checks
 - Process OOM check information as well as processes that are terminated due to OOMs
+- Don't add timeline entries that don't have anything in them (e.g. when the only element in the services array passed to parseIntoTimeline is a service that has not exceeded the socket failure threshold)

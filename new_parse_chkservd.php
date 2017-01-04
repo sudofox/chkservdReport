@@ -171,7 +171,8 @@ class chkservdParser
 				isset($service["notification"])							||
 				isset($service["socket_failure_threshold"])					||
 				isset($service["monitoring_enabled"])						||
-				isset($service["monitoring_disabled"])
+				isset($service["monitoring_disabled"])						||
+				isset($service["check_postponed_due_to_recent_service_restart"])
 				) {
                                         $output[$service["service_name"]] = $service;
                                 }
@@ -523,7 +524,35 @@ return $serviceBreakdown;
 				} // end switch
 			} // end if(isset)
 		} // end foreach
+
+
+	// Check systemState to see if anything has changed after interrupted check
+
+	foreach($this->systemState["down"] as $service_name => $service) { //bookmark
+		//var_export($service);
+		if (!isset($this->timeline[$timestamp]["services"][$service_name]) && isset($this->timeline[$timestamp]["services"]) && in_array($service_name, $this->monitoredServices)) {
+//			error_log("DEBUG: A service that was previously marked down ($service_name) was not found in this check.");
+//			var_export($service);
+//			var_export($this->timeline[$timestamp]["services"]);
+//			error_log("Marking service as recovered: it is enabled in service monitoring, and was not present in event list for last check.");
+
+			$this->timeline[$timestamp]["services"][$service_name]["status_changed_due_to_inconsistency"] = true;
+			$this->timeline[$timestamp]["services"][$service_name]["down_since"] = $this->systemState["down"][$service_name]["down_since"];
+			$this->timeline[$timestamp]["services"][$service_name]["restart_attempts"] = $this->systemState["down"][$service_name]["restart_attempts"];
+			$this->timeline[$timestamp]["services"][$service_name]["downtime"] = ($timestamp - $this->systemState["down"][$service_name]["down_since"]);
+			unset($this->systemState["down"][$service_name]);
+
+			}
+
+
+
+		}
+	
+
+
 	} // end 'if check not interrupted'
+
+
 } // End function
 
 } // end class
@@ -715,7 +744,6 @@ foreach($parser->eventList as $key=>$point) {
 
 		// TODO: old version of script took each service into parseIntoTimeline - we now need to pass the entire service check to parseIntoTimeline so we can handle interrupted checks
 		// TODO: same changes should be applied to explainServiceCheckResult so we can mention in the output that the check was interrupted
-
 		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($point, $options["colorize"]); echo "\n"; }
  		$parser->parseIntoTimeline($point);
 		// TODO: Old version of script unset check here for memory mgmt purposes - we may need to reference previous checks, so this has been removed for now.
@@ -744,6 +772,11 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 
                 if (isset($entry["monitoring_enabled"])) {
 			echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}Monitoring was {$fmt["reset"]}{$fmt["green"]}enabled{$fmt["reset"]}{$fmt["dim"]} for {$entry["service_name"]}.{$fmt["reset"]}\n";
+		}
+
+		if (isset($entry["status_changed_due_to_inconsistency"])) {
+			echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Service {$entry["service_name"]} has recovered. Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]} (Marked as up in this check - this can result from prior interrupted checks){$fmt["reset"]}\n";
+
 		}
 
 		if (isset($entry["monitoring_disabled"])) {

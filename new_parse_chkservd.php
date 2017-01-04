@@ -460,11 +460,8 @@ return $serviceBreakdown;
 	$timestamp = $check["timestamp"];
 
 	$this->timeline[$timestamp]["interrupted"] = $check["interrupted"];
-
-	// TODO: We are somehow losing all but the first entry in the check in the foreach, are we exiting the foreach prematurely?
 	if (!$this->timeline[$timestamp]["interrupted"]) {
 		foreach($check["services"] as $service) {
-
 			// Monitoring changes
 		        if (isset($service["monitoring_enabled"])) {
 					$this->timeline[$timestamp]["services"][$service["service_name"]]["monitoring_enabled"] = true;
@@ -719,7 +716,6 @@ foreach($parser->eventList as $key=>$point) {
 		// TODO: old version of script took each service into parseIntoTimeline - we now need to pass the entire service check to parseIntoTimeline so we can handle interrupted checks
 		// TODO: same changes should be applied to explainServiceCheckResult so we can mention in the output that the check was interrupted
 
-
 		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($point, $options["colorize"]); echo "\n"; }
  		$parser->parseIntoTimeline($point);
 		// TODO: Old version of script unset check here for memory mgmt purposes - we may need to reference previous checks, so this has been removed for now.
@@ -741,6 +737,9 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 		echo $fmt["bold"] .strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["red"]}The service check was interrupted before it could complete.{$fmt["reset"]}\n";
 	} else {
 
+//	if(!isset($timelineEntry["services"])) { var_export($timelineEntry); var_export(strftime("%F %T %z", $timestamp)); } // TODO: DEBUG
+
+	if(isset($timelineEntry["services"])) { // May be empty or not set if the only thing entering parseIntoTimeline is a check that hasn't exceeded the socket_failure_threshold or smth
 	foreach($timelineEntry["services"] as $entry["service_name"] => $entry) {
 
                 if (isset($entry["monitoring_enabled"])) {
@@ -768,6 +767,7 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 						break;
 					}
 				}
+			}
 		}
 	}
 

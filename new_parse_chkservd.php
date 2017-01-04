@@ -530,6 +530,14 @@ return $serviceBreakdown;
 
 	foreach($this->systemState["down"] as $service_name => $service) { //bookmark
 		//var_export($service);
+		if (strftime("%F %T %z", $timestamp) == "2015-07-03 13:10:26 -0400") { // DEBUG
+
+			var_export($this->systemState);
+			var_export($check);
+			var_export($this->monitoredServices);
+			var_export($this->timeline[$timestamp]);
+		}
+
 		if (!isset($this->timeline[$timestamp]["services"][$service_name]) && isset($this->timeline[$timestamp]["services"]) && in_array($service_name, $this->monitoredServices)) {
 //			error_log("DEBUG: A service that was previously marked down ($service_name) was not found in this check.");
 //			var_export($service);
@@ -547,13 +555,58 @@ return $serviceBreakdown;
 
 
 		}
-	
+
 
 
 	} // end 'if check not interrupted'
 
 
 } // End function
+
+
+        // -- Function Name : validateSystemState
+        // -- Params :  $check (a full entry from the parser's eventList)
+        // -- Purpose : checks for inconsistencies (usually from interrupted or missing checks) in the systemState and updates the timeline as needed
+
+        function validateSystemState($check) {
+
+	// This function is incomplete and needs to be finished, but I can't rn because i have to answer phone calls
+	$timestamp = $check["timestamp"];
+
+        foreach($this->systemState["down"] as $service_name => $service) { //bookmark
+                //var_export($service);
+                if (strftime("%F %T %z", $timestamp) == "2015-07-03 13:10:26 -0400") { // DEBUG
+
+                        var_export($this->systemState);
+                        var_export($check);
+                        var_export($this->monitoredServices);
+                        var_export($this->timeline[$timestamp]);
+                }
+
+                if (!isset($this->timeline[$timestamp]["services"][$service_name]) && isset($this->timeline[$timestamp]["services"]) && in_array($service_name, $this->monitoredServices)) {
+//                      error_log("DEBUG: A service that was previously marked down ($service_name) was not found in this check.");
+//                      var_export($service);
+//                      var_export($this->timeline[$timestamp]["services"]);
+//                      error_log("Marking service as recovered: it is enabled in service monitoring, and was not present in event list for last check.");
+
+                        $this->timeline[$timestamp]["services"][$service_name]["status_changed_due_to_inconsistency"] = true;
+                        $this->timeline[$timestamp]["services"][$service_name]["down_since"] = $this->systemState["down"][$service_name]["down_since"];
+                        $this->timeline[$timestamp]["services"][$service_name]["restart_attempts"] = $this->systemState["down"][$service_name]["restart_attempts"];
+
+                        $this->timeline[$timestamp]["services"][$service_name]["downtime"] = ($timestamp - $this->systemState["down"][$service_name]["down_since"]);
+                        unset($this->systemState["down"][$service_name]);
+
+                        }
+
+
+
+                }
+
+
+
+
+
+	}
 
 } // end class
 
@@ -740,7 +793,7 @@ foreach($parser->eventList as $key=>$point) {
 	// TODO: We may want to keep an empty service check if it comes _after_ an interrupted service check. We aren't currently doing this.
 	// TODO: see http://stackoverflow.com/a/4792770 to reference previous array element
 
-	if (!(empty($point["services"]) && !$point["interrupted"])) {
+	if (!(empty($point["services"]) && !$point["interrupted"])) { // TODO: tweak this to make parseIntoTimeline run if there's unresolved down services
 
 		// TODO: old version of script took each service into parseIntoTimeline - we now need to pass the entire service check to parseIntoTimeline so we can handle interrupted checks
 		// TODO: same changes should be applied to explainServiceCheckResult so we can mention in the output that the check was interrupted

@@ -566,8 +566,10 @@ return $serviceBreakdown;
 
 // Usage
 
+$scriptName = basename(__FILE__);
+
 $usage = <<<EOD
-Usage: ./parse_chkservd.php -f <filename> [<additional arguments>]
+Usage: ./{$scriptName} -f<filename> [<additional arguments>]
 
 If you wish to pass the arguments in any order, you must omit the space after the flag letter.
 

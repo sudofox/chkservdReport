@@ -37,7 +37,7 @@ class chkservdParser
 
 	var $monitoredServices = array();       // array of the names of monitored services. Used for detecting when monitoring for a service is disabled.
 	var $firstCheck = true;                 // Used to check if we are processing our first service check or not
-	public $systemState = array();          // List of unresolved down services, used for comparison between previous and next check
+	public $systemState = array("down" => array());          // List of unresolved down services, used for comparison between previous and next check
 	public $timeline = array();             // This timeline will be directly formatted into the final report of service failures and recoveries.
 	public $eventList = array();            // A list of when things happen: services gone down, back up, restart attempts, service monitoring settings changes, etc.
 	public $servicesList = array();         // list of services, the names being in the same order as $serviceCheckResults
@@ -65,7 +65,6 @@ class chkservdParser
 
 		$interrupted = false;
 		if (isset($this->interruptedChecks[$index]) && $this->interruptedChecks[$index]) {
-//		if (strpos($entry, "Service Check Interupted") !== false) {
 			$interrupted = true;
 			if ($this->firstCheck) {
 				return false; // First service check was interrupted. Ignore this one and count the next as the real first service check.
@@ -105,12 +104,6 @@ class chkservdParser
 			$serviceInfo =  $this->analyzeServiceCheck($service);
 			$entryData["services"][$serviceInfo["service_name"]] = $serviceInfo;
 		}
-
-		// TODO: Move this elsewhere?
-		// TODO: When faced with an interrupted service check, this will produce invalid results based on incomplete data.
-		// TODO: May want to simply skip the monitoring settings check until we have a service check that finished.
-
-		// TODO: If the very first service check is interrupted, we may want to just skip it entirely and throw it out
 
 		// Detect if service monitoring has been disabled for a service
 
@@ -406,7 +399,6 @@ return $serviceBreakdown;
 				break;
 
 			case "restart_attempted":
-				// TODO: color-code the $value
 				echo($fmt["bold"] . $fmt["yellow"] . "ACTION:" . $fmt["reset"] . $fmt["yellow"] . " A service restart has been attempted." . $fmt["reset"] . "\n");
 				break;
 
@@ -455,9 +447,8 @@ return $serviceBreakdown;
 
 		// TODO: Regardless of interrupted service checks, we should still compare systemState with what we have
 		// TODO: also need to figure out a way to get service state for "up" services not included in what was passed to this function
-		// TODO: with the tradeoff of increased memory usage, we can possibly include the services marked as up instead of filtering them out,
+		// TODO: with the tradeoff of increased memory usage, we can possibly include the services marked as up instead of filtering them out
 
-		// TODO: May be better to assume that a service within $parser->servicesList that is not present in here is by default "up", unless the check was interrupted.
 	$timestamp = $check["timestamp"];
 
 	$this->timeline[$timestamp]["interrupted"] = $check["interrupted"];
@@ -529,20 +520,8 @@ return $serviceBreakdown;
 	// Check systemState to see if anything has changed after interrupted check
 
 	foreach($this->systemState["down"] as $service_name => $service) { //bookmark
-		//var_export($service);
-		if (strftime("%F %T %z", $timestamp) == "2015-07-03 13:10:26 -0400") { // DEBUG
-
-			var_export($this->systemState);
-			var_export($check);
-			var_export($this->monitoredServices);
-			var_export($this->timeline[$timestamp]);
-		}
 
 		if (!isset($this->timeline[$timestamp]["services"][$service_name]) && isset($this->timeline[$timestamp]["services"]) && in_array($service_name, $this->monitoredServices)) {
-//			error_log("DEBUG: A service that was previously marked down ($service_name) was not found in this check.");
-//			var_export($service);
-//			var_export($this->timeline[$timestamp]["services"]);
-//			error_log("Marking service as recovered: it is enabled in service monitoring, and was not present in event list for last check.");
 
 			$this->timeline[$timestamp]["services"][$service_name]["status_changed_due_to_inconsistency"] = true;
 			$this->timeline[$timestamp]["services"][$service_name]["down_since"] = $this->systemState["down"][$service_name]["down_since"];
@@ -551,60 +530,35 @@ return $serviceBreakdown;
 			unset($this->systemState["down"][$service_name]);
 
 			}
-
-
-
 		}
 
-
-
 	} // end 'if check not interrupted'
-
 
 } // End function
 
 
         // -- Function Name : validateSystemState
         // -- Params :  $check (a full entry from the parser's eventList)
-        // -- Purpose : checks for inconsistencies (usually from interrupted or missing checks) in the systemState and updates the timeline as needed
+        // -- Purpose : This is run instead of parseIntoTimeline when there's unresolved down services, but parseIntoTimeline was not run.
+	// parseIntoTimeline has a similar check at the end, but it checks against the timeline entry that it's processing as well.
 
         function validateSystemState($check) {
 
-	// This function is incomplete and needs to be finished, but I can't rn because i have to answer phone calls
 	$timestamp = $check["timestamp"];
 
-        foreach($this->systemState["down"] as $service_name => $service) { //bookmark
-                //var_export($service);
-                if (strftime("%F %T %z", $timestamp) == "2015-07-03 13:10:26 -0400") { // DEBUG
+        foreach($this->systemState["down"] as $service_name => $service) {
 
-                        var_export($this->systemState);
-                        var_export($check);
-                        var_export($this->monitoredServices);
-                        var_export($this->timeline[$timestamp]);
-                }
-
-                if (!isset($this->timeline[$timestamp]["services"][$service_name]) && isset($this->timeline[$timestamp]["services"]) && in_array($service_name, $this->monitoredServices)) {
-//                      error_log("DEBUG: A service that was previously marked down ($service_name) was not found in this check.");
-//                      var_export($service);
-//                      var_export($this->timeline[$timestamp]["services"]);
-//                      error_log("Marking service as recovered: it is enabled in service monitoring, and was not present in event list for last check.");
+                if (in_array($service_name, $this->monitoredServices)) {
 
                         $this->timeline[$timestamp]["services"][$service_name]["status_changed_due_to_inconsistency"] = true;
                         $this->timeline[$timestamp]["services"][$service_name]["down_since"] = $this->systemState["down"][$service_name]["down_since"];
                         $this->timeline[$timestamp]["services"][$service_name]["restart_attempts"] = $this->systemState["down"][$service_name]["restart_attempts"];
-
                         $this->timeline[$timestamp]["services"][$service_name]["downtime"] = ($timestamp - $this->systemState["down"][$service_name]["down_since"]);
                         unset($this->systemState["down"][$service_name]);
 
                         }
 
-
-
                 }
-
-
-
-
 
 	}
 
@@ -743,7 +697,7 @@ else {
 }
 
 
-if ($options["v"]["p"]) {	error_log("DEBUG: Loading log file...");	} // TODO: Debug
+if ($options["v"]["p"]) {	error_log("Loading log file...");	} // TODO: Debug
 
 // Parse input data into unique elements with one raw service check per element:
 preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $logdata, $splitLogEntries);
@@ -784,10 +738,7 @@ unset($splitLogEntries);
 // TODO: interrupted service checks. When parsing events into the timeline, we'll iterate over the systemState to check for inconsistencies
 // TODO: if the previous check was interrupted.
 
-// TODO: Unsure whether the data within the interrupted check is usable or not, we might be able to update the systemState partially from what's
-// TODO: there, and fill in the rest from the next *completed* service check
-
-if ($options["v"]["p"]) { error_log("DEBUG: Parsing events into timeline..."); } //TODO: Debug
+if ($options["v"]["p"]) { error_log("Parsing events into timeline..."); } //TODO: Debug
 
 foreach($parser->eventList as $key=>$point) {
 	// TODO: We may want to keep an empty service check if it comes _after_ an interrupted service check. We aren't currently doing this.
@@ -801,7 +752,11 @@ foreach($parser->eventList as $key=>$point) {
  		$parser->parseIntoTimeline($point);
 		// TODO: Old version of script unset check here for memory mgmt purposes - we may need to reference previous checks, so this has been removed for now.
 
-	} // TODO: end if
+	} else if (isset($parser->systemState["down"]) && count($parser->systemState["down"]) > 0 ) {
+		// There are down services, but parseIntoTimeline was not run.
+		$parser->validateSystemState($point);
+
+	}
 
 }  // TODO: end foreach
 
@@ -817,8 +772,6 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 	if (isset($timelineEntry["interrupted"]) && $timelineEntry["interrupted"] == true) {
 		echo $fmt["bold"] .strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["red"]}The service check was interrupted before it could complete.{$fmt["reset"]}\n";
 	} else {
-
-//	if(!isset($timelineEntry["services"])) { var_export($timelineEntry); var_export(strftime("%F %T %z", $timestamp)); } // TODO: DEBUG
 
 	if(isset($timelineEntry["services"])) { // May be empty or not set if the only thing entering parseIntoTimeline is a check that hasn't exceeded the socket_failure_threshold or smth
 	foreach($timelineEntry["services"] as $entry["service_name"] => $entry) {

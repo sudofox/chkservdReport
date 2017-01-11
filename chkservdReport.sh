@@ -277,10 +277,10 @@ return $serviceBreakdown;
 }	// end function
 
 
-                // -- Function Name : explainServiceCheckResult
+                // -- Function Name : explainServiceCheck
                 // -- Params :  $check (a full entry from the parser's eventList), $colorize
                 // -- Purpose : Produces an array with human-readable information and color information about a particular service check. Does not do comparison.
-		function explainServiceCheckResult($check, $colorize) {
+		function explainServiceCheck($check, $colorize) {
 
 		// $fmt array is "format"
 
@@ -320,6 +320,7 @@ return $serviceBreakdown;
 		echo ($fmt["bold"] . $fmt["red"] . "This service check was interrupted before it was able to complete." . $fmt["reset"] . "\n");
 	}
 
+	if (isset($check["services"]) && !empty($check["services"])) {
 	foreach($check["services"] as $service) {
 
                 echo($fmt["bold"] . "INFO: Service name: {$service["service_name"]}{$fmt["reset"]}\n");
@@ -439,6 +440,7 @@ return $serviceBreakdown;
 			echo "\n";
 
 		} // end iteration over services
+		} // end if
 	} // end function
 
 
@@ -566,8 +568,10 @@ return $serviceBreakdown;
 
 // Usage
 
+$scriptName = basename(__FILE__);
+
 $usage = <<<EOD
-Usage: ./parse_chkservd.php -f <filename> [<additional arguments>]
+Usage: ./{$scriptName} -f<filename> [<additional arguments>]
 
 If you wish to pass the arguments in any order, you must omit the space after the flag letter.
 
@@ -734,7 +738,7 @@ foreach ($splitLogEntries[0] as $index => $entry) {
 
 unset($splitLogEntries);
 
-// TODO: We now have our parsed entries, and know whether or not the check was interrupted. 
+// TODO: We now have our parsed entries, and know whether or not the check was interrupted.
 
 if ($options["v"]["p"]) { error_log("Parsing events into timeline..."); } //TODO: Debug
 
@@ -744,7 +748,7 @@ foreach($parser->eventList as $key=>$point) {
 
 	if (!(empty($point["services"]) && !$point["interrupted"])) { // TODO: tweak this to make parseIntoTimeline run if there's unresolved down services
 
-		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheckResult($point, $options["colorize"]); echo "\n"; }
+		if ($options["v"]["t"]) { echo "\n"; $parser->explainServiceCheck($point, $options["colorize"]); echo "\n"; }
  		$parser->parseIntoTimeline($point);
 
 	} else if (isset($parser->systemState["down"]) && count($parser->systemState["down"]) > 0 ) {

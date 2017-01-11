@@ -6,5 +6,6 @@ My goal for this project is to have a tool that can parse through the log and pr
 
 To Do:
 
-- Fix inconstencies caused by of interrupted service checks
+- Don't add timeline entries that don't have anything in them (e.g. when the only element in the services array passed to parseIntoTimeline is a service that has not exceeded the socket failure threshold)
 - Process OOM check information as well as processes that are terminated due to OOMs
+- Add timeline entry for large gaps between log entries (e.g. if chkservd is disabled or something)

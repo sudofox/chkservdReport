@@ -14,7 +14,7 @@ date_default_timezone_set("America/New_York");
 function shutdown_handler()
 {
 	$memory_limit = ini_get("memory_limit");
-	ini_set("memory_limit", (preg_replace("/[^0-9]/", "", ini_get("memory_limit") + 2) . "M")); // Allocate a small amount of additional memory so the shutdown function can complete.
+	ini_set("memory_limit", (preg_replace("/[^0-9]/", "", ini_get("memory_limit")) + 2 . "M")); // Allocate a small amount of additional memory so the shutdown function can complete.
 	gc_collect_cycles();
 	$error = error_get_last();
 	if (preg_match("/Allowed memory size of/", $error["message"])) {
@@ -577,11 +577,13 @@ If you wish to pass the arguments in any order, you must omit the space after th
 
 (e.g. -fchkservd.log -m500M -n100000)
 
+By default, -n is set to 10000 (this will go back several days).
+
 Required arguments
 -f	filename of chkservd logfile
 
 Optional arguments
--n	number of lines to read from the end of the file
+-n	number of lines to read from the end of the file (default 10000, pass 0 for unlimited)
 -m	manually set the memory_limit - be careful with this! ( e.g. -m128M )
 
 Verbosity and visual options (these are optional arguments)
@@ -677,17 +679,15 @@ else {
 
 $logdata = "";
 
-if (isset($options["n"])) {
-	if (!is_numeric($options["n"]) && $options["n"] > 0) {
-		exit("Error: -n must be numeric and more than 0.\n\n$usage");
-	}
-
-	exec("tail -n" . escapeshellarg($options["n"]) . " " . escapeshellarg($options["f"]) , $logtail);
-	foreach($logtail as $line) {
-		$logdata.= $line . "\n";
-	}
+if (!isset($options["n"])) {
+	$options["n"] = 10000;
 }
-else {
+
+if (!is_numeric($options["n"]) || $options["n"] < 0) {
+	exit("Error: -n must be a positive number.\n\n$usage");
+}
+
+if ($options["n"] == 0) {
 
 	// TODO: <(cat file1.log file2.log) as a file descriptor only seems to make the script read the second file, find out if this can be compensated for in PHP
 
@@ -698,6 +698,16 @@ else {
 	else {
 		$logdata = file_get_contents($options["f"]);
 	}
+}
+
+else {
+
+	exec("tail -n" . escapeshellarg($options["n"]) . " " . escapeshellarg($options["f"]) , $logtail);
+	foreach($logtail as $line) {
+		$logdata.= $line . "\n";
+	}
+
+	unset($logtail);
 }
 
 
@@ -782,7 +792,7 @@ foreach($parser->timeline as $timestamp => $timelineEntry) {
 		}
 
 		if (isset($entry["status_changed_due_to_inconsistency"])) {
-			echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Service {$entry["service_name"]} has recovered. Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]} (Marked as up in this check - this can result from prior interrupted checks){$fmt["reset"]}\n";
+			echo $fmt["bold"] . strftime("%F %T %z", $timestamp) . "{$fmt["reset"]} - {$fmt["dim"]}{$fmt["green"]}Service {$entry["service_name"]} has recovered. Downtime: {$fmt["bold"]}{$entry["downtime"]} seconds.{$fmt["reset"]}{$fmt["green"]}{$fmt["dim"]} Restart attempts: {$fmt["bold"]}{$entry["restart_attempts"]} (Already marked as up - can occur after an interrupted check){$fmt["reset"]}\n";
 
 		}
 

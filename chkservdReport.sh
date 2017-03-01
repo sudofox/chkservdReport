@@ -85,7 +85,7 @@ class chkservdParser
 		$servicesList = array();
 		foreach($this->serviceCheckResults as $entry) {
 			$entry = explode(" ", $entry);
-			$servicesList[] =  $entry[0];
+			$servicesList[] =  trim($entry[0]);
 		}
 
 		$this->servicesList = $servicesList;
@@ -121,7 +121,7 @@ class chkservdParser
 					}
 					foreach($removedServices as $removedService) {
 						$entryData["services"][$removedService]["monitoring_disabled"] = true;
-						$entryData["services"][$removedService]["service_name"] = $removedService;
+						$entryData["services"][$removedService]["service_name"] = trim($removedService);
 					}
 				}
 			}
@@ -144,7 +144,7 @@ class chkservdParser
 		$serviceCheckData = current($serviceCheckData);
 		$serviceCheckData["service_name"] = explode(" ", $checkOutput);
 		// Not part of original chkservd output, added so we can later obtain the service name.
-		$serviceCheckData["service_name"] =  "[service_name:".$serviceCheckData["service_name"][0]."]";
+		$serviceCheckData["service_name"] =  "[service_name:".trim($serviceCheckData["service_name"][0])."]";
 		return $serviceCheckData;
 		}
 

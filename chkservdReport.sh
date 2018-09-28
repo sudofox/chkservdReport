@@ -1,7 +1,8 @@
 #!/usr/bin/env php
 <?php
 /*
-*  Chkservd/Tailwatch log parser by aburk (aburk@liquidweb.com)
+*  sudofox/chkservdReport
+*  Chkservd/Tailwatch log parser by aburk aka sudofox (aburk@liquidweb.com)
 *  Parses a chkservd.log file and returns a pretty timeline of service failures and related details
 *
 */

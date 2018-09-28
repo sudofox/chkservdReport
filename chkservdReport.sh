@@ -54,7 +54,7 @@ class chkservdParser
 		// Should be given only one chkservd log section, will chop off rest if more is given.
 		// Pull out our Chkservd log block entry...pull first one if more than one are provided for some reason
 
-		preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (Interrupted|Finished)/sm", $input, $entries);
+		preg_match_all("/Service\ Check\ Started.*?Service\ Check\ (?:Interrupted|Finished)/sm", $input, $entries);
 		$entry = current(current($entries));
 
 		// TODO: Remove
